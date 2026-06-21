@@ -1,7 +1,7 @@
 "use client";
 
 import type { Feature, FeatureCollection, GeoJsonProperties, LineString } from "geojson";
-import type { ExpressionSpecification, StyleSpecification } from "maplibre-gl";
+import type { ExpressionSpecification, Point, StyleSpecification } from "maplibre-gl";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -710,15 +710,24 @@ async function defaultMountMap(initialArgs: TacticalMapMountArgs): Promise<Tacti
     syncActiveOperationalLayers();
   });
 
-  map.on("mousemove", (event) => {
-    if (!map.getLayer("city-selection-hit")) {
+  // rAF-throttle the hover hit-test: queryRenderedFeatures on every raw pointer move is a per-frame
+  // (or faster) cost that drops frames during pan on a dense selection layer. Coalesce moves to at
+  // most one hit-test per animation frame against the most recent pointer position.
+  let pendingHoverPoint: Point | null = null;
+  let hoverRafId: number | null = null;
+
+  const runHoverHitTest = () => {
+    hoverRafId = null;
+    const point = pendingHoverPoint;
+    pendingHoverPoint = null;
+    if (!point || !map.getLayer("city-selection-hit")) {
       return;
     }
 
-    const cityFeatures = map.queryRenderedFeatures(event.point, { layers: ["city-selection-hit"] });
+    const cityFeatures = map.queryRenderedFeatures(point, { layers: ["city-selection-hit"] });
     const hoveredCity = extractCityTarget(
       cityFeatures[0] as GeoJSON.Feature<GeoJSON.Geometry, GeoJsonProperties> | undefined,
-      event.point,
+      point,
     );
     const hoverSource = map.getSource("city-hover-source") as maplibregl.GeoJSONSource | undefined;
 
@@ -746,6 +755,16 @@ async function defaultMountMap(initialArgs: TacticalMapMountArgs): Promise<Tacti
     }
 
     currentArgs.onCityHover(hoveredCity);
+  };
+
+  map.on("mousemove", (event) => {
+    pendingHoverPoint = event.point;
+    if (hoverRafId === null) {
+      hoverRafId =
+        typeof requestAnimationFrame === "function"
+          ? requestAnimationFrame(runHoverHitTest)
+          : (runHoverHitTest(), null);
+    }
   });
 
   map.on("click", (event) => {
@@ -771,6 +790,9 @@ async function defaultMountMap(initialArgs: TacticalMapMountArgs): Promise<Tacti
   return {
     destroy: () => {
       window.removeEventListener("mapfactbook:reset-camera", handleResetCamera);
+      if (hoverRafId !== null && typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(hoverRafId);
+      }
       map.remove();
     },
     update: (nextArgs) => {
@@ -897,23 +919,35 @@ export function TacticalMap2D({
     };
   }, [mountMap]);
 
+  // Signature of the values controller.update() actually consumes. Joined-id compare for layer ids
+  // (like syncBaseImagery's key diff) + a stable selected-city id, so the update effect skips
+  // redundant MapLibre work when an unrelated parent re-render produces new array/object identities
+  // (e.g. selectedCity is rebuilt each render but resolves to the same cityId).
+  const updateSignature = [
+    [...activeLayerIds].sort().join(","),
+    activeBaseImageryLayerId,
+    activeDate ?? "",
+    citySelectionAssetPath,
+    selectedCity?.cityId ?? "",
+    featuredCities.map((city) => city.cityId).join(","),
+    baseImageryCatalog.generatedAt,
+    globeManifest.generatedAt,
+  ].join("|");
+  const lastUpdateSignatureRef = useRef<string | null>(null);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !controllerRef.current) {
       return;
     }
 
+    if (lastUpdateSignatureRef.current === updateSignature) {
+      return;
+    }
+    lastUpdateSignatureRef.current = updateSignature;
+
     controllerRef.current.update(buildMountArgs(container));
-  }, [
-    activeLayerIds,
-    activeBaseImageryLayerId,
-    activeDate,
-    baseImageryCatalog,
-    citySelectionAssetPath,
-    featuredCities,
-    globeManifest,
-    selectedCity,
-  ]);
+  }, [updateSignature]);
 
   return (
     <div

@@ -317,3 +317,52 @@ textarea:focus-visible {
 
 /* Coordinate / data mono readout (OSINT signature) */
 .mono-readout { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+
+/* ---- Tactical command rail v2 ---- */
+
+/* Status badge palette — defined once, used by getStatusBadge() */
+.status-mapped {
+  border-color: rgba(180, 201, 138, 0.5);
+  background: rgba(40, 48, 33, 0.9);
+  color: #d7dfc1;
+}
+.status-documented {
+  border-color: rgba(125, 211, 252, 0.3);
+  background: rgba(56, 189, 248, 0.1);
+  color: #bae6fd;
+}
+.coverage-pending {
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.12);
+  color: #fcd34d;
+}
+.status-missing {
+  border-color: rgba(58, 64, 55, 1);
+  background: rgba(18, 21, 21, 1);
+  color: #94a3b8;
+}
+
+/* Nav item — icon + label link with hover lift and active accent */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #272c29;
+  border-radius: 8px;
+  background: rgba(15, 17, 18, 0.88);
+  padding: 0.5rem 0.625rem;
+  color: #cbd5cf;
+  transition: border-color 0.16s ease, color 0.16s ease, background-color 0.16s ease;
+}
+.nav-item:hover {
+  border-color: #3b4334;
+  color: #f1f5f0;
+  background: rgba(22, 27, 24, 0.92);
+}
+.nav-item[aria-current="page"],
+.nav-item.is-active {
+  border-color: rgba(156, 171, 122, 0.55);
+  background: linear-gradient(180deg, rgba(40, 48, 33, 0.96), rgba(26, 31, 22, 0.9));
+  color: #e3ecca;
+  box-shadow: 0 0 0 1px rgba(156, 171, 122, 0.08), 0 0 18px -8px rgba(156, 171, 122, 0.35);
+}

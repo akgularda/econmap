@@ -1,3 +1,7 @@
+"use client";
+
+import dynamic from "next/dynamic";
+
 import type {
   BaseImageryCatalog,
   CityRegistryEntry,
@@ -7,10 +11,26 @@ import type {
   GlobeManifest,
 } from "@/domain/types";
 import { HomeStage, type SelectedCitySummary } from "@/features/home/components/home-stage";
-import { KeyboardShortcutsModal } from "@/features/home/components/modals/keyboard-shortcuts-modal";
-import { LayerLegendModal } from "@/features/home/components/modals/layer-legend-modal";
-import { SettingsModal } from "@/features/home/components/modals/settings-modal";
 import type { AnalystWatchlist } from "@/features/home/lib/analyst-sidebar-model";
+
+// The 3 modals are action-gated (each renders null until its zustand flag opens) and never part of
+// the home first paint, so code-split them out of the home initial chunk. ssr:false is safe — they
+// render nothing server-side anyway — and required under static export for an action-gated lazy.
+const LayerLegendModal = dynamic(
+  () => import("@/features/home/components/modals/layer-legend-modal").then((m) => m.LayerLegendModal),
+  { ssr: false },
+);
+const SettingsModal = dynamic(
+  () => import("@/features/home/components/modals/settings-modal").then((m) => m.SettingsModal),
+  { ssr: false },
+);
+const KeyboardShortcutsModal = dynamic(
+  () =>
+    import("@/features/home/components/modals/keyboard-shortcuts-modal").then(
+      (m) => m.KeyboardShortcutsModal,
+    ),
+  { ssr: false },
+);
 
 type SelectedCityPanel = CommandCenterCityPanel | null;
 

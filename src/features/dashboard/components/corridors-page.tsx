@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { PageFrame } from "@/components/layout/page-frame";
 import {
   fetchCorridorIndex,
@@ -8,8 +9,14 @@ import {
   CorridorIndexEntry,
   CorridorDetail,
 } from "@/lib/asset-client";
-import { AssetMap } from "@/components/charts/asset-map";
 import { LoadingState } from "@/components/states/loading-state";
+
+// Code-split maplibre-gl (+ its CSS, ~250 KB) off the corridors route's initial chunk.
+// ssr:false is required under static export.
+const AssetMap = dynamic(
+  () => import("@/components/charts/asset-map").then((m) => m.AssetMap),
+  { ssr: false, loading: () => <LoadingState label="Loading corridor map..." /> },
+);
 
 const numberFormat = new Intl.NumberFormat("en-US");
 

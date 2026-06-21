@@ -1,17 +1,7 @@
 import Link from "next/link";
 
+import { WORKSPACE_NAV } from "@/components/layout/nav-items";
 import { cn } from "@/lib/utils";
-
-const nav = [
-  { href: "/", label: "Map" },
-  { href: "/compare", label: "Compare" },
-  { href: "/corridors", label: "Corridors" },
-  { href: "/rankings", label: "Rankings" },
-  { href: "/indicators", label: "Indicators" },
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/story-mode", label: "Story mode" },
-  { href: "/reports", label: "Reports" },
-];
 
 export function PageFrame({
   eyebrow,
@@ -39,7 +29,7 @@ export function PageFrame({
               <p className="mt-4 text-sm leading-7 text-slate-300 md:text-base">{description}</p>
             </div>
             <nav className="flex flex-wrap gap-2">
-              {nav.map((item) => (
+              {WORKSPACE_NAV.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}

@@ -1,5 +1,6 @@
 import { commandCenterCityAnalystNavigationSchema } from "@/domain/command-center-schemas";
 import type {
+  BaseImageryCatalog,
   CommandCenterAnalystRow,
   CommandCenterCityPanel,
   CommandCenterCityWorkspace,
@@ -908,5 +909,357 @@ export function buildSavedCitiesWatchlist(
       ? hrefFor({ selectedCitySlug: savedCitySlugs[0], activeLayerIds: [] })
       : undefined,
     sourceLabels: ["Your watchlist"],
+  };
+}
+
+// ---- Map layers group (v2 tactical command rail) ----
+
+export type MapLayerToggleRow = {
+  id: string;
+  label: string;
+  /** Layer ids this row controls (usually one). */
+  layerIds: string[];
+  active: boolean;
+  href: string;
+  sourceLabels: string[];
+  state: "mapped" | "coverage-pending";
+};
+
+export type MapLayerFamily = {
+  id: string;
+  title: string;
+  rows: MapLayerToggleRow[];
+  /** Source label used for the honest coverage-pending placeholder when empty. */
+  pendingSourceLabel: string;
+};
+
+export type BaseImageryOption = {
+  id: string;
+  label: string;
+  family: string;
+  active: boolean;
+  href: string;
+  status: string;
+};
+
+export type ImageryDateOption = {
+  date: string;
+  active: boolean;
+  href: string;
+};
+
+export type SavedViewOption = {
+  id: string;
+  label: string;
+  active: boolean;
+  href: string;
+  sourceLabels: string[];
+};
+
+/**
+ * Display families for the Map layers group. The published globe-layer `family`
+ * vocabulary is mapped onto these six analyst families so the rail always shows a
+ * coherent, complete control group — even when a family has no published layer
+ * (in which case an honest coverage-pending placeholder is rendered).
+ */
+const MAP_LAYER_FAMILIES: { id: string; title: string; pendingSourceLabel: string; families: string[] }[] = [
+  {
+    id: "borders-labels",
+    title: "Borders & Labels",
+    pendingSourceLabel: "Natural Earth",
+    families: ["Political / Admin", "Base Earth"],
+  },
+  { id: "transport", title: "Transport", pendingSourceLabel: "OurAirports", families: ["Transport"] },
+  {
+    id: "utilities",
+    title: "Utilities",
+    pendingSourceLabel: "WRI Global Power Plant Database",
+    families: ["Economic / Infrastructure"],
+  },
+  { id: "connectivity", title: "Connectivity", pendingSourceLabel: "Ookla", families: ["Connectivity"] },
+  {
+    id: "environment",
+    title: "Environment",
+    pendingSourceLabel: "WHO Air Quality",
+    families: ["Atmosphere", "Hydrology", "Environmental"],
+  },
+  {
+    id: "economy-institutions",
+    title: "Economy / Institutions",
+    pendingSourceLabel: "ROR",
+    families: ["Signals / Detection"],
+  },
+];
+
+/**
+ * Partitions the published globe layers into the six Map-layers families, turning
+ * each layer into a real ON/OFF toggle row whose href adds or removes the layer id
+ * from `?layers` (the same add/remove pattern used by `buildAnalystSidebarSections`).
+ */
+export function buildMapLayerFamilies({
+  globeManifest,
+  activeLayerIds,
+  activeViewId,
+  activeBaseImageryLayerId,
+  activeDate,
+  searchQuery,
+  selectedCitySlug,
+}: {
+  globeManifest: GlobeManifest;
+  activeLayerIds: string[];
+  activeViewId: string;
+  activeBaseImageryLayerId: string;
+  activeDate?: string;
+  searchQuery: string;
+  selectedCitySlug?: string;
+}): MapLayerFamily[] {
+  const familyForLayer = (layerFamily: string) => {
+    const match = MAP_LAYER_FAMILIES.find((entry) => entry.families.includes(layerFamily));
+    return match?.id ?? "economy-institutions";
+  };
+
+  const rowsByFamily = new Map<string, MapLayerToggleRow[]>();
+  for (const layer of globeManifest.layers) {
+    const familyId = familyForLayer(layer.family);
+    const active = activeLayerIds.includes(layer.id);
+    const nextLayerIds = active
+      ? activeLayerIds.filter((id) => id !== layer.id)
+      : Array.from(new Set([...activeLayerIds, layer.id]));
+    const row: MapLayerToggleRow = {
+      id: layer.id,
+      label: layer.label,
+      layerIds: [layer.id],
+      active,
+      href: hrefFor({
+        searchQuery,
+        selectedCitySlug,
+        activeViewId,
+        activeLayerIds: nextLayerIds,
+        activeBaseImageryLayerId,
+        activeDate,
+      }),
+      sourceLabels: layer.sourceLabels,
+      state: "mapped",
+    };
+    const existing = rowsByFamily.get(familyId);
+    if (existing) {
+      existing.push(row);
+    } else {
+      rowsByFamily.set(familyId, [row]);
+    }
+  }
+
+  return MAP_LAYER_FAMILIES.map((entry) => ({
+    id: entry.id,
+    title: entry.title,
+    pendingSourceLabel: entry.pendingSourceLabel,
+    rows: rowsByFamily.get(entry.id) ?? [],
+  }));
+}
+
+/**
+ * Base imagery picker options. `true-color` is excluded from the selectable set
+ * (it is never offered as a base on the home surface).
+ */
+export function buildBaseImageryOptions({
+  baseImageryLayers,
+  activeBaseImageryLayerId,
+  activeLayerIds,
+  activeViewId,
+  activeDate,
+  searchQuery,
+  selectedCitySlug,
+}: {
+  baseImageryLayers: { id: string; label: string; family: string; status: string }[];
+  activeBaseImageryLayerId: string;
+  activeLayerIds: string[];
+  activeViewId: string;
+  activeDate?: string;
+  searchQuery: string;
+  selectedCitySlug?: string;
+}): BaseImageryOption[] {
+  return baseImageryLayers
+    .filter((layer) => layer.id !== "true-color")
+    .map((layer) => ({
+      id: layer.id,
+      label: layer.label,
+      family: layer.family,
+      status: layer.status,
+      active: layer.id === activeBaseImageryLayerId,
+      href: hrefFor({
+        searchQuery,
+        selectedCitySlug,
+        activeViewId,
+        activeLayerIds,
+        activeBaseImageryLayerId: layer.id,
+        activeDate,
+      }),
+    }));
+}
+
+/**
+ * Imagery date options for the active base layer — only meaningful when that base
+ * layer is published and exposes available dates.
+ */
+export function buildImageryDateOptions({
+  availableDates,
+  activeDate,
+  activeBaseImageryLayerId,
+  activeLayerIds,
+  activeViewId,
+  searchQuery,
+  selectedCitySlug,
+}: {
+  availableDates: string[];
+  activeDate?: string;
+  activeBaseImageryLayerId: string;
+  activeLayerIds: string[];
+  activeViewId: string;
+  searchQuery: string;
+  selectedCitySlug?: string;
+}): ImageryDateOption[] {
+  return availableDates.map((date) => ({
+    date,
+    active: date === activeDate,
+    href: hrefFor({
+      searchQuery,
+      selectedCitySlug,
+      activeViewId,
+      activeLayerIds,
+      activeBaseImageryLayerId,
+      activeDate: date,
+    }),
+  }));
+}
+
+/** Saved-view switcher options from the command-center manifest. */
+export function buildSavedViewOptions({
+  savedViews,
+  activeViewId,
+  activeLayerIds,
+  activeBaseImageryLayerId,
+  activeDate,
+  searchQuery,
+  selectedCitySlug,
+}: {
+  savedViews: { id: string; label: string; sourceLabels: string[] }[];
+  activeViewId: string;
+  activeLayerIds: string[];
+  activeBaseImageryLayerId: string;
+  activeDate?: string;
+  searchQuery: string;
+  selectedCitySlug?: string;
+}): SavedViewOption[] {
+  return savedViews.map((view) => ({
+    id: view.id,
+    label: view.label,
+    sourceLabels: view.sourceLabels,
+    active: view.id === activeViewId,
+    href: hrefFor({
+      searchQuery,
+      selectedCitySlug,
+      activeViewId: view.id,
+      activeLayerIds,
+      activeBaseImageryLayerId,
+      activeDate,
+    }),
+  }));
+}
+
+// ---- Home view resolution (shared by static page + client no-reload reader) ----
+
+const EXCLUDED_BASE_IMAGERY_LAYER_IDS = new Set(["true-color"]);
+const DEFAULT_HOMEPAGE_LAYER_IDS = ["ports"];
+
+export type ResolvedHomeView = {
+  activeLayerIds: string[];
+  activeBaseImageryLayerId: string;
+  activeDate?: string;
+  activeViewId: string;
+  activeViewLabel: string;
+  selectedCitySlug?: string;
+  searchQuery: string;
+};
+
+/**
+ * Resolves the canonical home view (layers / base / date / view) from requested
+ * URL params against the manifests, applying the same defaults the static page
+ * uses. Keeping this in the model lib means the server page and the client
+ * no-reload reader produce identical state for the same params.
+ */
+export function resolveHomeView({
+  requestedLayerIds,
+  requestedBaseImageryLayerId,
+  requestedDate,
+  requestedViewId,
+  selectedCitySlug,
+  searchQuery,
+  isBlankHomepageSearch,
+  globeManifest,
+  baseImageryCatalog,
+  commandCenterManifest,
+  featuredCitySlug,
+}: {
+  requestedLayerIds: string[];
+  requestedBaseImageryLayerId?: string;
+  requestedDate?: string;
+  requestedViewId?: string;
+  selectedCitySlug?: string;
+  searchQuery: string;
+  isBlankHomepageSearch: boolean;
+  globeManifest: GlobeManifest;
+  baseImageryCatalog: BaseImageryCatalog;
+  commandCenterManifest: CommandCenterManifest;
+  featuredCitySlug?: string;
+}): ResolvedHomeView {
+  const activeView =
+    commandCenterManifest.savedViews.find((view) => view.id === requestedViewId) ??
+    commandCenterManifest.savedViews.find((view) => view.id === commandCenterManifest.defaultViewId) ??
+    commandCenterManifest.savedViews[0];
+
+  const availableLayerIds = new Set(globeManifest.layers.map((layer) => layer.id));
+  const activeLayerIds =
+    requestedLayerIds.length > 0
+      ? requestedLayerIds.filter((layerId) => availableLayerIds.has(layerId))
+      : DEFAULT_HOMEPAGE_LAYER_IDS;
+
+  const availableBaseImageryLayerIds = new Set(baseImageryCatalog.layers.map((layer) => layer.id));
+  const defaultBaseImageryLayerId = availableBaseImageryLayerIds.has("night-lights")
+    ? "night-lights"
+    : baseImageryCatalog.defaultLayerId && availableBaseImageryLayerIds.has(baseImageryCatalog.defaultLayerId)
+      ? baseImageryCatalog.defaultLayerId
+      : undefined;
+  const isSelectable = (layerId?: string) =>
+    Boolean(layerId) && !EXCLUDED_BASE_IMAGERY_LAYER_IDS.has(layerId as string);
+  const activeBaseImageryLayer =
+    (requestedBaseImageryLayerId &&
+    isSelectable(requestedBaseImageryLayerId) &&
+    availableBaseImageryLayerIds.has(requestedBaseImageryLayerId)
+      ? baseImageryCatalog.layers.find((layer) => layer.id === requestedBaseImageryLayerId)
+      : undefined) ??
+    (defaultBaseImageryLayerId
+      ? baseImageryCatalog.layers.find((layer) => layer.id === defaultBaseImageryLayerId)
+      : undefined) ??
+    baseImageryCatalog.layers[0];
+
+  const activeDate =
+    activeBaseImageryLayer?.status === "published"
+      ? activeBaseImageryLayer.availableDates.includes(requestedDate ?? "")
+        ? requestedDate
+        : activeBaseImageryLayer.availableDates[0]
+      : undefined;
+
+  const resolvedSelectedCitySlug =
+    selectedCitySlug ?? (isBlankHomepageSearch ? featuredCitySlug : undefined);
+
+  return {
+    activeLayerIds,
+    activeBaseImageryLayerId:
+      activeBaseImageryLayer?.id ?? defaultBaseImageryLayerId ?? baseImageryCatalog.defaultLayerId,
+    activeDate,
+    activeViewId: activeView?.id ?? commandCenterManifest.defaultViewId,
+    activeViewLabel: activeView?.label ?? "Global Ops",
+    selectedCitySlug: resolvedSelectedCitySlug,
+    searchQuery,
   };
 }

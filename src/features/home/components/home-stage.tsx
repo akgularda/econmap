@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 
 import type {
   BaseImageryCatalog,
@@ -24,14 +24,20 @@ import {
 import { InfosPanel, type InfosPanelProps } from "@/features/home/components/layout/infos-panel";
 import {
   buildAnalystSidebarSections,
+  buildBaseImageryOptions,
   buildCommandCenterCityAnalystNavigation,
+  buildImageryDateOptions,
+  buildMapLayerFamilies,
   buildSavedCitiesWatchlist,
+  buildSavedViewOptions,
   hrefFor,
   mergeRecentCities,
+  resolveHomeView,
   RECENT_CITY_STORAGE_KEY,
   type AnalystWatchlist,
   type RecentCityEntry,
 } from "@/features/home/lib/analyst-sidebar-model";
+import { useHomeViewParams, type HomeViewParams } from "@/features/home/lib/use-home-view-params";
 import { loadDossier } from "@/lib/dossier-bundle-client";
 import { readLocalStorage, writeLocalStorage } from "@/lib/storage";
 import { useWatchlistStore } from "@/store/watchlist-store";
@@ -82,6 +88,25 @@ const compactNumber = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
+
+// Cache the fetched+parsed search index in a module-level promise (mirrors getIndex() in
+// dossier-bundle-client.ts) so the JSON parse happens ONCE per session instead of on every
+// query batch that misses server-provided results. The AbortController only cancels the per-query
+// React state update, never this shared fetch — so a cancelled query still warms the cache.
+let searchIndexPromise: Promise<CitySearchIndexEntry[]> | null = null;
+
+function getClientSearchIndex(): Promise<CitySearchIndexEntry[]> {
+  if (!searchIndexPromise) {
+    searchIndexPromise = fetch(assetUrl(`/data/cities/search-index.json`))
+      .then((response) => (response.ok ? (response.json() as Promise<CitySearchIndexEntry[]>) : []))
+      .catch(() => {
+        // Don't poison the cache on a transient failure — allow a later query to retry.
+        searchIndexPromise = null;
+        return [];
+      });
+  }
+  return searchIndexPromise;
+}
 
 const COVERAGE_BADGE_LABELS = {
   economicFactbook: "economic",
@@ -613,6 +638,7 @@ function getSelectedCityIntel({
     entityRows,
     infrastructureRows,
     metricRows,
+    slug: selectedCityPanel.city.slug,
     sourceLabels,
     summary: workspace?.summary,
     workspaceHref: `/city/${selectedCityPanel.city.slug}`,
@@ -681,6 +707,7 @@ function buildSearchResults({
     name: city.name,
     populationLabel: city.population ? compactNumber.format(city.population) : "n/a",
     selected: city.slug === selectedCitySlug,
+    slug: city.slug,
   }));
 }
 
@@ -714,6 +741,7 @@ function buildFeaturedCityResults({
     name: city.name,
     populationLabel: city.population ? compactNumber.format(city.population) : "n/a",
     selected: city.slug === selectedCitySlug,
+    slug: city.slug,
   }));
 }
 
@@ -747,13 +775,11 @@ function buildRecentCityResults({
     name: city.name,
     populationLabel: city.population ? compactNumber.format(city.population) : "n/a",
     selected: city.slug === selectedCitySlug,
+    slug: city.slug,
   }));
 }
 
 export function HomeStage({
-  activeLayerIds,
-  activeBaseImageryLayerId,
-  activeDate,
   baseImageryCatalog,
   citySelectionAssetPath,
   commandCenterManifest,
@@ -762,13 +788,48 @@ export function HomeStage({
   globeManifest,
   initialCityResults,
   initialSelectedCityPanel,
-  searchQuery,
-  selectedCitySlug,
   selectedCitySummary,
-  selectedViewId,
-  selectedViewLabel,
   watchlists,
 }: HomeStageProps) {
+  // No-reload nav: read the live `?q/?city/?layers/?base/?date/?view` params and
+  // re-derive the canonical home view client-side. The static export always serves
+  // the blank homepage URL (`/`), so the hydration seed is the blank request — the
+  // featured-city + default-layer resolution below reproduces the server's surface,
+  // and the real deep-link params are adopted from `location.search` on the client.
+  const hydrationSeed: HomeViewParams = useMemo(
+    () => ({
+      searchQuery: "",
+      selectedCitySlug: undefined,
+      requestedViewId: undefined,
+      requestedLayerIds: [],
+      requestedBaseImageryLayerId: undefined,
+      requestedDate: undefined,
+      isBlankHomepageSearch: true,
+    }),
+    [],
+  );
+  const { params: viewParams, navigate } = useHomeViewParams(hydrationSeed);
+  const resolvedView = resolveHomeView({
+    requestedLayerIds: viewParams.requestedLayerIds,
+    requestedBaseImageryLayerId: viewParams.requestedBaseImageryLayerId,
+    requestedDate: viewParams.requestedDate,
+    requestedViewId: viewParams.requestedViewId,
+    selectedCitySlug: viewParams.selectedCitySlug,
+    searchQuery: viewParams.searchQuery,
+    isBlankHomepageSearch: viewParams.isBlankHomepageSearch,
+    globeManifest,
+    baseImageryCatalog,
+    commandCenterManifest,
+    featuredCitySlug: featuredCities[0]?.slug,
+  });
+  const activeLayerIds = resolvedView.activeLayerIds;
+  const activeBaseImageryLayerId = resolvedView.activeBaseImageryLayerId;
+  const activeDate = resolvedView.activeDate;
+  const selectedViewId = resolvedView.activeViewId;
+  const selectedViewLabel = resolvedView.activeViewLabel;
+  const selectedCitySlug = resolvedView.selectedCitySlug;
+  const searchQuery = resolvedView.searchQuery;
+
   const normalizedSearchQuery = searchQuery.trim();
   const [cityResults, setCityResults] = useState(initialCityResults);
   const [selectedCityPanel, setSelectedCityPanel] = useState<SelectedCityPanel>(initialSelectedCityPanel);
@@ -810,15 +871,9 @@ export function HomeStage({
       setSearchResultsLoading(true);
     });
 
-    void fetch(assetUrl(`/data/cities/search-index.json`), {
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          return [] as CitySearchIndexEntry[];
-        }
-
-        const allEntries = (await response.json()) as CitySearchIndexEntry[];
+    // One fetch + one JSON.parse per session (cached module-level), then filter the in-memory array.
+    void getClientSearchIndex()
+      .then((allEntries) => {
         // Client-side filter matching the server-side search logic
         const normalizedQuery = normalizedSearchQuery.toLowerCase();
         return allEntries
@@ -1048,6 +1103,48 @@ export function HomeStage({
     searchQuery,
     selectedCitySlug,
   });
+  const mapLayerFamilies = buildMapLayerFamilies({
+    globeManifest,
+    activeLayerIds,
+    activeViewId: selectedViewId,
+    activeBaseImageryLayerId,
+    activeDate,
+    searchQuery,
+    selectedCitySlug,
+  });
+  const baseImageryOptions = buildBaseImageryOptions({
+    baseImageryLayers: baseImageryCatalog.layers,
+    activeBaseImageryLayerId,
+    activeLayerIds,
+    activeViewId: selectedViewId,
+    activeDate,
+    searchQuery,
+    selectedCitySlug,
+  });
+  const activeBaseImageryLayer = baseImageryCatalog.layers.find(
+    (layer) => layer.id === activeBaseImageryLayerId,
+  );
+  const imageryDateOptions =
+    activeBaseImageryLayer && activeBaseImageryLayer.status === "published"
+      ? buildImageryDateOptions({
+          availableDates: activeBaseImageryLayer.availableDates,
+          activeDate,
+          activeBaseImageryLayerId,
+          activeLayerIds,
+          activeViewId: selectedViewId,
+          searchQuery,
+          selectedCitySlug,
+        })
+      : [];
+  const savedViewOptions = buildSavedViewOptions({
+    savedViews: commandCenterManifest.savedViews,
+    activeViewId: selectedViewId,
+    activeLayerIds,
+    activeBaseImageryLayerId,
+    activeDate,
+    searchQuery,
+    selectedCitySlug,
+  });
   const selectedCityIntel = getSelectedCityIntel({
     activeBaseImageryLayerId,
     activeDate,
@@ -1064,6 +1161,72 @@ export function HomeStage({
     selectedCitySummary: resolvedSelectedCitySummary,
   });
 
+  // Stabilize the map's featuredCities prop identity so TacticalMap2D's update() effect doesn't
+  // re-run (and re-sync MapLibre layers/camera) on every unrelated re-render (search typing,
+  // recent-city writes, watchlist store updates). Rebuilt only when the underlying cities change.
+  const mapFeaturedCities = useMemo(
+    () =>
+      featuredCities.map((city) => ({
+        cityId: city.cityId,
+        latitude: city.latitude,
+        longitude: city.longitude,
+        name: city.name,
+        slug: city.slug,
+        countryIso3: city.countryIso3,
+      })),
+    [featuredCities],
+  );
+
+  // Intercept home-relative deep links (search / layer / base / date / view
+  // toggles produced by hrefFor) so they update via history.pushState instead of
+  // a full GET reload. Route links (/compare, /city/..., etc.) and modified
+  // clicks fall through to normal navigation.
+  const handleRailClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    if (event.button !== 0) {
+      return;
+    }
+    const anchor = (event.target as HTMLElement).closest("a");
+    if (!anchor || anchor.target === "_blank") {
+      return;
+    }
+    const href = anchor.getAttribute("href");
+    if (!href) {
+      return;
+    }
+    const [pathname] = href.split("?");
+    const normalizedPath = pathname.replace(/\/+$/, "") || "/";
+    if (normalizedPath !== "/") {
+      return;
+    }
+    event.preventDefault();
+    navigate(href);
+  };
+
+  // Intercept the inline city-search form (GET `/?q=...`) so search is instant.
+  const handleRailSubmit = (event: React.FormEvent<HTMLDivElement>) => {
+    const form = event.target as HTMLFormElement;
+    if (form.tagName !== "FORM") {
+      return;
+    }
+    const action = form.getAttribute("action") ?? "/";
+    if (action.replace(/\/+$/, "") !== "") {
+      return;
+    }
+    event.preventDefault();
+    const formData = new FormData(form);
+    const params = new URLSearchParams();
+    for (const [key, value] of formData.entries()) {
+      if (typeof value === "string" && value) {
+        params.set(key, value);
+      }
+    }
+    const query = params.toString();
+    navigate(query ? `/?${query}` : "/");
+  };
+
   return (
     <>
       <div className="absolute inset-0">
@@ -1077,14 +1240,7 @@ export function HomeStage({
           className="min-h-screen border-0 bg-transparent shadow-none"
           globeManifest={globeManifest}
           searchQuery={searchQuery}
-          featuredCities={featuredCities.map((city) => ({
-            cityId: city.cityId,
-            latitude: city.latitude,
-            longitude: city.longitude,
-            name: city.name,
-            slug: city.slug,
-            countryIso3: city.countryIso3,
-          }))}
+          featuredCities={mapFeaturedCities}
           selectedCity={selectedCityFocus}
           selectedCitySlug={selectedCitySlug}
           surfaceClassName="min-h-screen"
@@ -1095,12 +1251,21 @@ export function HomeStage({
         data-testid="tactical-stage-overlay"
         className="pointer-events-none relative z-20 min-h-screen p-3 lg:p-4"
       >
-        <div className="pointer-events-auto absolute bottom-3 left-3 right-3 top-3 w-auto sm:right-auto sm:w-[340px] lg:w-[380px]">
+        <div
+          onClickCapture={handleRailClick}
+          onSubmitCapture={handleRailSubmit}
+          className="pointer-events-auto absolute bottom-3 left-3 right-3 top-3 w-auto sm:right-auto sm:w-[340px] lg:w-[380px]"
+        >
           <TacticalSidebar
             activeLayerIdsValue={activeLayerIds.join(",")}
             activeBaseImageryLayerId={activeBaseImageryLayerId}
             activeDate={activeDate}
             analystSections={analystSections}
+            sections={mapLayerFamilies}
+            productLinks={[]}
+            baseImageryOptions={baseImageryOptions}
+            imageryDateOptions={imageryDateOptions}
+            savedViewOptions={savedViewOptions}
             datasetWorkspaceSummary={datasetWorkspaceSummary}
             featuredCities={featuredCityResults}
             recentCities={recentCityResults}

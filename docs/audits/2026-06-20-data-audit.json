@@ -1,0 +1,68 @@
+{
+  "generatedAt": "2026-06-20T20:20:32.836Z",
+  "overall": "warn",
+  "results": [
+    {
+      "id": "size-budget",
+      "title": "Size budget (GitHub Pages limits)",
+      "status": "warn",
+      "failures": [],
+      "warnings": [
+        "data\\globe\\layers\\cities\\vectors\\current.geojson is 80.4 MB > 50 MiB (GitHub warning threshold).",
+        "data\\globe\\layers\\cities\\shards\\world.geojson is 80.4 MB > 50 MiB (GitHub warning threshold)."
+      ],
+      "metrics": {
+        "totalMB": 328.1,
+        "fileCount": 18924,
+        "largestFileMB": 80.4
+      }
+    },
+    {
+      "id": "license",
+      "title": "Source licenses (no commercial/unknown)",
+      "status": "pass",
+      "failures": [],
+      "warnings": [],
+      "metrics": {
+        "activeSources": 3,
+        "commercial": 0,
+        "unknown": 0
+      }
+    },
+    {
+      "id": "count-consistency",
+      "title": "Counts trace to the city manifest",
+      "status": "pass",
+      "failures": [],
+      "warnings": [],
+      "metrics": {
+        "totalCities": 191845,
+        "processed": 7310,
+        "sources": 3
+      }
+    },
+    {
+      "id": "provenance",
+      "title": "Provenance (every entity is source-backed)",
+      "status": "pass",
+      "failures": [],
+      "warnings": [],
+      "metrics": {
+        "scanned": 4279,
+        "unsourced": 0
+      }
+    },
+    {
+      "id": "geospatial",
+      "title": "Geospatial sanity (coords in bounds)",
+      "status": "pass",
+      "failures": [],
+      "warnings": [],
+      "metrics": {
+        "scanned": 0,
+        "outOfBounds": 0,
+        "nullIsland": 0
+      }
+    }
+  ]
+}

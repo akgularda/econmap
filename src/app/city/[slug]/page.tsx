@@ -1,24 +1,27 @@
 import { Metadata } from "next";
-import { notFound } from "next/navigation";
 
 import { CityPageClient } from "./city-page-client";
 import { loadCitySlugMeta } from "@/lib/city-data";
-
-// Pre-render cities with population >= this threshold
-const POPULATION_THRESHOLD = 50000;
+import { selectPrerenderSlugs } from "@/lib/city-prerender";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
 };
 
-// Generate static params for cities above population threshold.
-// Uses the slim slug-meta map (~11MB) rather than the full registry (113MB) so
-// the static-export workers don't hold ~500MB resident per worker (which OOM'd).
+// Pre-render only the top-N cities by population (see src/lib/city-prerender.ts).
+// Every other (minor) city still resolves client-side: a non-pre-rendered /city/<slug>/
+// deep link boots the SPA via public/404.html and CityPageClient loads its dossier from
+// the Range-addressable bundle. So no valid slug 404s — only HTML shells are reduced.
+// Uses the slim slug-meta map (~11MB) rather than the full registry (113MB) so the
+// static-export workers don't hold ~500MB resident per worker (which OOM'd).
 export async function generateStaticParams() {
   const slugMeta = await loadCitySlugMeta();
-  return Object.entries(slugMeta)
-    .filter(([, meta]) => meta.p >= POPULATION_THRESHOLD)
-    .map(([slug]) => ({ slug }));
+  const entries = Object.entries(slugMeta).map(([slug, meta]) => ({
+    slug,
+    population: meta.p,
+  }));
+  // Empty registry (fresh clone, no data) → [] without crashing.
+  return selectPrerenderSlugs(entries).map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -28,7 +31,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   if (!meta) {
     return {
-      title: "City Not Found | MapFactbook",
+      title: "City OSINT Dossier | MapFactbook",
     };
   }
 
@@ -40,12 +43,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function CityPage({ params }: PageProps) {
   const { slug } = await params;
-  // generateStaticParams already restricts this route to valid slugs; the O(1)
-  // slug-meta check just guards stray direct hits without touching the registry.
-  const slugMeta = await loadCitySlugMeta();
-  if (!slugMeta[slug]) {
-    notFound();
-  }
-
+  // No notFound() guard: minor (non-pre-rendered) cities are first-class. CityPageClient
+  // resolves ANY slug from the dossier bundle and renders an honest "no dossier yet" state
+  // for genuinely unknown slugs, so deep links to minor cities never 404.
   return <CityPageClient slug={slug} />;
 }

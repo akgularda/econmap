@@ -30,7 +30,14 @@ export function CityPageClient({ slug }: CityPageClientProps) {
       setLoading(true);
       setError(null);
 
-      const foundCity = await findCityBySlug(slug);
+      // The command-center manifest does not depend on the city, so kick it off in parallel with
+      // the first city lookup instead of waiting for the (Range-fetched) city to resolve first.
+      // findCityBySlug + loadCommandCenterCityPanelClient share one deduped dossier Range fetch.
+      const cityPromise = findCityBySlug(slug);
+      const panelPromise = loadCommandCenterCityPanelClient({ slug });
+      const manifestPromise = loadCommandCenterManifestClient();
+
+      const foundCity = await cityPromise;
 
       if (!foundCity) {
         if (!cancelled) {
@@ -43,8 +50,8 @@ export function CityPageClient({ slug }: CityPageClientProps) {
       if (!cancelled) setCity(foundCity);
 
       const [cityPanel, commandCenterManifest] = await Promise.all([
-        loadCommandCenterCityPanelClient({ slug }),
-        loadCommandCenterManifestClient(),
+        panelPromise,
+        manifestPromise,
       ]);
 
       if (!cancelled && commandCenterManifest) setManifest(commandCenterManifest);

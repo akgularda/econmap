@@ -1,12 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { AssetRecord, CountryAssetAggregation } from "@/domain/types";
 import { fetchCountryAssets, fetchAssetManifest } from "@/lib/asset-client";
 import { MetricCard } from "@/components/data/metric-card";
 import { EmptyState } from "@/components/states/empty-state";
 import { LoadingState } from "@/components/states/loading-state";
-import { AssetMap } from "@/components/charts/asset-map";
+
+// Code-split maplibre-gl (+ its CSS, ~250 KB) off the country route's initial chunk: the asset map
+// only renders inside the Assets tab. ssr:false is required under static export.
+const AssetMap = dynamic(
+  () => import("@/components/charts/asset-map").then((m) => m.AssetMap),
+  { ssr: false, loading: () => <LoadingState label="Loading asset map..." /> },
+);
 
 export function CountryAssets({ countryIso3, center }: { countryIso3: string, center: [number, number] }) {
   const [assets, setAssets] = useState<AssetRecord[]>([]);

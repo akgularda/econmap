@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import webpack from "webpack";
 
 // Single source of truth. Empty in dev (root serving); "/econmap" in prod build (.env.production).
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
@@ -20,23 +19,8 @@ const nextConfig: NextConfig = {
   },
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
-    NEXT_PUBLIC_CESIUM_BASE_URL: `${basePath}/vendor/cesium`,
   },
   turbopack: {},
-  webpack: (config) => {
-    config.amd = {
-      ...(config.amd ?? {}),
-      toUrlUndefined: true,
-    };
-
-    config.plugins.push(
-      new webpack.DefinePlugin({
-        CESIUM_BASE_URL: JSON.stringify(`${basePath}/vendor/cesium`),
-      }),
-    );
-
-    return config;
-  },
 };
 
 export default nextConfig;

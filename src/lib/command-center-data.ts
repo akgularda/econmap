@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { z } from "zod";
+
 import {
   baseImageryCatalogSchema,
   cityFootprintCatalogSchema,
@@ -214,29 +216,84 @@ function scoreSearchEntry(entry: CitySearchIndexEntry, normalizedQuery: string) 
   return -1;
 }
 
+// Epoch marker used for empty fallbacks so the UI can tell "data not generated yet"
+// apart from a real (recent) generation timestamp.
+const MISSING_DATA_EPOCH = new Date(0).toISOString();
+
+function isMissingFileError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "ENOENT"
+  );
+}
+
+/**
+ * Read + schema-validate a generated JSON artifact, degrading to an empty-but-valid
+ * surface when the file is simply absent (fresh clone before the data pipeline has
+ * run). Malformed JSON / schema violations still throw.
+ */
+async function readGeneratedJson<S extends z.ZodTypeAny>(
+  file: string,
+  schema: S,
+  emptyFallback: z.input<S>,
+): Promise<z.output<S>> {
+  try {
+    const content = await fs.readFile(file, "utf-8");
+    return schema.parse(JSON.parse(content)) as z.output<S>;
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(
+          `[command-center] generated artifact missing, using empty fallback: ${path.relative(process.cwd(), file)}`,
+        );
+      }
+      return schema.parse(emptyFallback) as z.output<S>;
+    }
+    throw error;
+  }
+}
+
 async function readCommandCenterManifest() {
-  const content = await fs.readFile(COMMAND_CENTER_MANIFEST_FILE, "utf-8");
-  return commandCenterManifestSchema.parse(JSON.parse(content));
+  return readGeneratedJson(COMMAND_CENTER_MANIFEST_FILE, commandCenterManifestSchema, {
+    generatedAt: MISSING_DATA_EPOCH,
+    defaultViewId: "default",
+    globalIntelligence: [],
+    opsTimeline: [],
+    savedViews: [],
+    sourceSummary: [],
+  });
 }
 
 async function readGlobeManifest() {
-  const content = await fs.readFile(GLOBE_MANIFEST_FILE, "utf-8");
-  return globeManifestSchema.parse(JSON.parse(content));
+  return readGeneratedJson(GLOBE_MANIFEST_FILE, globeManifestSchema, {
+    generatedAt: MISSING_DATA_EPOCH,
+    layers: [],
+  });
 }
 
 async function readBaseImageryCatalog() {
-  const content = await fs.readFile(BASE_IMAGERY_CATALOG_FILE, "utf-8");
-  return baseImageryCatalogSchema.parse(JSON.parse(content));
+  return readGeneratedJson(BASE_IMAGERY_CATALOG_FILE, baseImageryCatalogSchema, {
+    generatedAt: MISSING_DATA_EPOCH,
+    defaultLayerId: "night-lights",
+    layers: [],
+  });
 }
 
 async function readCityFootprintCatalog() {
-  const content = await fs.readFile(CITY_FOOTPRINT_CATALOG_FILE, "utf-8");
-  return cityFootprintCatalogSchema.parse(JSON.parse(content));
+  return readGeneratedJson(CITY_FOOTPRINT_CATALOG_FILE, cityFootprintCatalogSchema, {
+    generatedAt: MISSING_DATA_EPOCH,
+    selectionAssetPath: "",
+    cities: [],
+  });
 }
 
 async function readCityFootprintSelection() {
-  const content = await fs.readFile(CITY_FOOTPRINT_CATALOG_FILE, "utf-8");
-  return cityFootprintSelectionSchema.parse(JSON.parse(content));
+  return readGeneratedJson(CITY_FOOTPRINT_CATALOG_FILE, cityFootprintSelectionSchema, {
+    generatedAt: MISSING_DATA_EPOCH,
+    selectionAssetPath: "",
+  });
 }
 
 async function readDatasetWorkspace(datasetId: string) {

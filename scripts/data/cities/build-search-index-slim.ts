@@ -1,18 +1,25 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { CITY_POPULATION_THRESHOLD } from "../../../src/lib/city-prerender";
+
 /**
- * Slim the 59 MB search index for mobile. The search box surfaces the navigable cities (those with a
- * pre-rendered /city/<slug> page, population >= threshold); non-navigable cities stay clickable on the
- * map directly. Dropping the URL/Wikidata-Q-ID aliases (which add no search value) and scoping to the
- * navigable set takes the index from ~59 MB → ~2.4 MB, a single file lazily loaded on first search,
- * with full name/alias/country/admin substring matching preserved (same shape, so no client change).
+ * Slim the 59 MB search index for mobile. The search box surfaces the navigable cities (population
+ * >= threshold). Only the top-N of those get a pre-rendered /city/<slug> page (see
+ * src/lib/city-prerender.ts CITY_PRERENDER_LIMIT); the rest still resolve client-side via the SPA
+ * 404 fallback + dossier bundle, so they stay searchable AND deep-linkable. Dropping the
+ * URL/Wikidata-Q-ID aliases (which add no search value) and scoping to the navigable set takes the
+ * index from ~59 MB → ~2.4 MB, a single file lazily loaded on first search, with full
+ * name/alias/country/admin substring matching preserved (same shape, so no client change).
+ *
+ * The population threshold is imported from src/lib/city-prerender.ts — the SAME module page.tsx
+ * imports — so the page set and search set cannot drift.
  *
  * Run: npx tsx scripts/data/cities/build-search-index-slim.ts
  */
 const SRC = path.join(process.cwd(), "src", "data", "generated", "cities", "search-index.json");
 const OUT = path.join(process.cwd(), "public", "data", "cities", "search-index.json");
-const POPULATION_THRESHOLD = 50000; // matches src/app/city/[slug]/page.tsx — the cities with pages
+const POPULATION_THRESHOLD = CITY_POPULATION_THRESHOLD; // shared with src/app/city/[slug]/page.tsx
 
 type Entry = {
   cityId: string;

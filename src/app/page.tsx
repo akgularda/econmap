@@ -1,4 +1,5 @@
 import { HomeShell } from "@/features/home/components/home-shell";
+import { resolveHomeView } from "@/features/home/lib/analyst-sidebar-model";
 import {
   loadBaseImageryCatalog,
   loadCityFootprintCatalog,
@@ -8,31 +9,6 @@ import {
   loadGlobeManifest,
 } from "@/lib/command-center-home-data";
 import { loadLegacyOsintSurfaceModel } from "@/lib/command-center-data";
-
-const EXCLUDED_BASE_IMAGERY_LAYER_IDS = new Set(["true-color"]);
-
-function resolveDefaultBaseImageryLayerId(
-  availableBaseImageryLayerIds: Set<string>,
-  defaultLayerId?: string,
-) {
-  if (availableBaseImageryLayerIds.has("night-lights")) {
-    return "night-lights";
-  }
-
-  if (defaultLayerId && availableBaseImageryLayerIds.has(defaultLayerId)) {
-    return defaultLayerId;
-  }
-
-  return undefined;
-}
-
-function isBaseImageryLayerSelectable(layerId?: string) {
-  if (!layerId) {
-    return false;
-  }
-
-  return !EXCLUDED_BASE_IMAGERY_LAYER_IDS.has(layerId);
-}
 
 function buildSelectedCitySummary({
   featuredCities,
@@ -141,58 +117,32 @@ export default async function Home() {
     loadFeaturedCommandCenterCities(),
     loadLegacyOsintSurfaceModel(),
   ]);
-  const resolvedSelectedCitySlug = selectedCitySlug ?? (isBlankHomepageSearch ? featuredCities[0]?.slug : undefined);
+  const resolvedView = resolveHomeView({
+    requestedLayerIds,
+    requestedBaseImageryLayerId,
+    requestedDate,
+    requestedViewId,
+    selectedCitySlug,
+    searchQuery,
+    isBlankHomepageSearch,
+    globeManifest,
+    baseImageryCatalog,
+    commandCenterManifest,
+    featuredCitySlug: featuredCities[0]?.slug,
+  });
+  const resolvedSelectedCitySlug = resolvedView.selectedCitySlug;
   const selectedCitySummary = buildSelectedCitySummary({
     featuredCities,
     selectableCities: cityFootprintCatalog.cities,
     selectedCitySlug: resolvedSelectedCitySlug,
   });
 
-  const activeView =
-    commandCenterManifest.savedViews.find((view) => view.id === requestedViewId) ??
-    commandCenterManifest.savedViews.find((view) => view.id === commandCenterManifest.defaultViewId) ??
-    commandCenterManifest.savedViews[0];
-
-  const availableLayerIds = new Set(globeManifest.layers.map((layer) => layer.id));
-  const hasExplicitLayerSelection = requestedLayerIds.length > 0;
-  // Default-visible evidence layer: the real Ports layer (UN/LOCODE + World Port Index).
-  // activeLayerIds below filters this through availableLayerIds, so it is silently dropped
-  // if the layer is ever absent from the globe manifest. Source labels stay visible via the
-  // layer-legend modal + the sidebar Ports row.
-  const defaultHomepageLayerIds: string[] = ["ports"];
-  const activeLayerIds = hasExplicitLayerSelection
-    ? requestedLayerIds.filter((layerId) => availableLayerIds.has(layerId))
-    : defaultHomepageLayerIds;
-  const availableBaseImageryLayerIds = new Set(baseImageryCatalog.layers.map((layer) => layer.id));
-  const defaultBaseImageryLayerId = resolveDefaultBaseImageryLayerId(
-    availableBaseImageryLayerIds,
-    baseImageryCatalog.defaultLayerId,
-  );
-  const activeBaseImageryLayer =
-    (requestedBaseImageryLayerId &&
-    isBaseImageryLayerSelectable(requestedBaseImageryLayerId) &&
-    availableBaseImageryLayerIds.has(requestedBaseImageryLayerId)
-      ? baseImageryCatalog.layers.find((layer) => layer.id === requestedBaseImageryLayerId)
-      : undefined) ??
-    (defaultBaseImageryLayerId
-      ? baseImageryCatalog.layers.find((layer) => layer.id === defaultBaseImageryLayerId)
-      : undefined) ??
-    baseImageryCatalog.layers[0];
-  const activeDate =
-    activeBaseImageryLayer?.status === "published"
-      ? activeBaseImageryLayer.availableDates.includes(requestedDate ?? "")
-        ? requestedDate
-        : activeBaseImageryLayer.availableDates[0]
-      : undefined;
-
   return (
     <HomeShell
-      activeLayerIds={activeLayerIds}
-      activeBaseImageryLayerId={
-        activeBaseImageryLayer?.id ?? defaultBaseImageryLayerId ?? baseImageryCatalog.defaultLayerId
-      }
-      activeDate={activeDate}
-      activeViewId={activeView?.id ?? commandCenterManifest.defaultViewId}
+      activeLayerIds={resolvedView.activeLayerIds}
+      activeBaseImageryLayerId={resolvedView.activeBaseImageryLayerId}
+      activeDate={resolvedView.activeDate}
+      activeViewId={resolvedView.activeViewId}
       cityResults={[]}
       commandCenterManifest={commandCenterManifest}
       globeManifest={globeManifest}

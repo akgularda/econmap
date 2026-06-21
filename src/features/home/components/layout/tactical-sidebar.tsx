@@ -1,9 +1,34 @@
 "use client";
 
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Bookmark, Building2, Compass, Layers, Search } from "lucide-react";
 
 import type { CommandCenterAnalystRowState } from "@/domain/types";
-import { CityBriefSection } from "@/features/home/components/layout/city-brief-section";
+import { SidebarSection } from "@/features/home/components/layout/sidebar/sidebar-section";
+import { SidebarHeader, SidebarFooter } from "@/features/home/components/layout/sidebar/sidebar-chrome";
+import { WorkspaceNav } from "@/features/home/components/layout/sidebar/workspace-nav";
+import { BrowseNav } from "@/features/home/components/layout/sidebar/browse-nav";
+import { MapLayersGroup } from "@/features/home/components/layout/sidebar/map-layers-group";
+import {
+  CityBriefPanel,
+  type CityBriefIntel,
+} from "@/features/home/components/layout/sidebar/city-brief-panel";
+import {
+  SavedRecentGroup,
+  type SavedRecentCityRow,
+  type SavedRecentCompareSet,
+} from "@/features/home/components/layout/sidebar/saved-recent-group";
+import {
+  CommandPalette,
+  type CommandPaletteCity,
+} from "@/features/home/components/layout/sidebar/command-palette";
+import type {
+  BaseImageryOption,
+  ImageryDateOption,
+  MapLayerFamily,
+  SavedViewOption,
+} from "@/features/home/lib/analyst-sidebar-model";
+import { useTacticalGlobeStore } from "@/store/tactical-globe-store";
 
 export type TacticalSidebarSearchResult = {
   href: string;
@@ -11,6 +36,7 @@ export type TacticalSidebarSearchResult = {
   name: string;
   populationLabel: string;
   selected: boolean;
+  slug?: string;
 };
 
 export type TacticalSidebarAnalystRow = {
@@ -71,6 +97,7 @@ export type TacticalSidebarSelectedCityIntel =
       infrastructureRows: TacticalSidebarInfrastructureRow[];
       kind: "selected-city";
       metricRows: TacticalSidebarMetricRow[];
+      slug?: string;
       sourceLabels: string[];
       summary?: string;
       workspaceHref: string;
@@ -82,17 +109,30 @@ export type TacticalSidebarSelectedCityIntel =
       title: string;
     };
 
+export type TacticalSidebarProductLink = {
+  href: string;
+  label: string;
+};
+
 type TacticalSidebarProps = {
   activeBaseImageryLayerId: string;
   activeDate?: string;
   activeLayerIdsValue: string;
-  analystSections: TacticalSidebarAnalystSection[];
+  /** Layer-coverage analyst rows (used only to derive city-brief counts). */
+  analystSections?: TacticalSidebarAnalystSection[];
+  /** Map-layers families with real ON/OFF toggle hrefs. */
+  sections?: MapLayerFamily[];
+  baseImageryOptions?: BaseImageryOption[];
+  imageryDateOptions?: ImageryDateOption[];
+  savedViewOptions?: SavedViewOption[];
   datasetWorkspaceSummary: {
     href: string;
     label: string;
     meta: string;
   };
   featuredCities: TacticalSidebarSearchResult[];
+  /** Dynamic product links (reserved; static routes render from the shared nav). */
+  productLinks?: TacticalSidebarProductLink[];
   recentCities: TacticalSidebarSearchResult[];
   searchQuery: string;
   searchResults: TacticalSidebarSearchResult[];
@@ -103,372 +143,35 @@ type TacticalSidebarProps = {
   watchlists: TacticalSidebarWatchlist[];
 };
 
-function renderSearchResult(result: TacticalSidebarSearchResult) {
-  return (
-    <Link
-      key={result.href}
-      href={result.href}
-      className={`block border px-2.5 py-2 transition ${
-        result.selected
-          ? "border-[#9cab7a]/55 bg-[#23291f]/90"
-          : "border-[#272c29] bg-[#0f1112]/88 hover:border-[#3b4334]"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-semibold text-white">{result.name}</p>
-          <p className="mt-0.5 truncate text-[10px] uppercase tracking-[0.14em] text-slate-500">
-            {result.meta}
-          </p>
-        </div>
-        <span className="shrink-0 text-[10px] uppercase tracking-[0.16em] text-slate-400">
-          {result.populationLabel}
-        </span>
-      </div>
-    </Link>
-  );
-}
-
-function getAnalystStateClassName(state: CommandCenterAnalystRowState) {
-  switch (state) {
-    case "mapped":
-      return "border-[#9cab7a]/45 bg-[#242a20] text-[#d7dfc1]";
-    case "documented":
-      return "border-sky-300/30 bg-sky-400/10 text-sky-100";
-    case "queued":
-      return "border-amber-300/30 bg-amber-300/10 text-amber-100";
-    default:
-      return "border-[#3a4037] bg-[#121515] text-slate-400";
+function toBriefIntel(intel: TacticalSidebarSelectedCityIntel): CityBriefIntel {
+  if (intel.kind === "selection-prompt") {
+    return { kind: "selection-prompt", title: intel.title, body: intel.body, sourceLabels: intel.sourceLabels };
   }
-}
-
-function buildAnalystCountLabels(row: TacticalSidebarAnalystRow) {
-  const labels: string[] = [];
-
-  if (row.mappedCount > 0) {
-    labels.push(`${row.mappedCount} mapped`);
-  }
-
-  if (row.documentedCount > 0) {
-    labels.push(`${row.documentedCount} documented`);
-  }
-
-  if (row.queuedDatasetCount > 0) {
-    labels.push(`${row.queuedDatasetCount} queued`);
-  }
-
-  return labels;
-}
-
-function AnalystRowBody({
-  active,
-  detail,
-  documentedCount,
-  label,
-  mappedCount,
-  queuedDatasetCount,
-  sourceLabels,
-  state,
-}: Omit<TacticalSidebarAnalystRow, "href" | "id">) {
-  const visibleSourceLabels = sourceLabels.slice(0, 3);
-  const remainingSourceCount = Math.max(sourceLabels.length - visibleSourceLabels.length, 0);
-  const countLabels = buildAnalystCountLabels({
-    active,
-    detail,
-    documentedCount,
-    href: undefined,
-    id: label,
-    label,
-    mappedCount,
-    queuedDatasetCount,
-    sourceLabels,
-    state,
-  });
-
-  return (
-    <div
-      className={`tactical-panel border px-2.5 py-2 transition ${
-        active
-          ? "border-[#8f9c6e]/55 bg-[#1a1f1b]"
-          : "border-[#272c29] bg-[#0f1112]"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-semibold text-white">{label}</p>
-          <p className="mt-0.5 text-[11px] leading-4 text-slate-400">
-            {detail ?? "No source-backed detail published for this row yet."}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {active !== undefined ? (
-            <span
-              className={`tactical-chip px-1.5 py-0.5 text-[9px] tracking-[0.18em] ${
-                active
-                  ? "border-[#9cab7a]/45 bg-[#242a20] text-[#d7dfc1]"
-                  : "border-[#3a4037] bg-[#121515] text-slate-400"
-              }`}
-            >
-              {active ? "on" : "off"}
-            </span>
-          ) : null}
-          <span
-            className={`tactical-chip shrink-0 px-1.5 py-0.5 text-[9px] tracking-[0.18em] ${getAnalystStateClassName(
-              state,
-            )}`}
-          >
-            {state}
-          </span>
-        </div>
-      </div>
-
-      {countLabels.length > 0 ? (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {countLabels.map((countLabel) => (
-            <span
-              key={`${label}-${countLabel}`}
-              className="tactical-chip px-1.5 py-0.5 text-[9px] tracking-[0.18em] text-slate-300"
-            >
-              {countLabel}
-            </span>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="mt-2 flex flex-wrap gap-1">
-        {visibleSourceLabels.length > 0 ? (
-          visibleSourceLabels.map((sourceLabel) => (
-            <span
-              key={`${label}-${sourceLabel}`}
-              className="tactical-chip tactical-chip-active px-1.5 py-0.5 text-[9px] tracking-[0.18em]"
-            >
-              {sourceLabel}
-            </span>
-          ))
-        ) : (
-          <span className="tactical-chip px-1.5 py-0.5 text-[9px] tracking-[0.18em] text-slate-500">
-            No source label
-          </span>
-        )}
-        {remainingSourceCount > 0 ? (
-          <span className="tactical-chip px-1.5 py-0.5 text-[9px] tracking-[0.18em] text-slate-400">
-            +{remainingSourceCount}
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function renderAnalystRow(row: TacticalSidebarAnalystRow) {
-  if (!row.href) {
-    return <AnalystRowBody key={row.id} {...row} />;
-  }
-
-  return (
-    <Link key={row.id} href={row.href} className="block">
-      <AnalystRowBody {...row} />
-    </Link>
-  );
-}
-
-function renderSelectedCityIntel({
-  analystSections,
-  selectedCityIntel,
-}: {
-  analystSections: TacticalSidebarAnalystSection[];
-  selectedCityIntel: TacticalSidebarSelectedCityIntel;
-}) {
-  const analystRows = analystSections.flatMap((section) => section.rows);
-  const mappedCount = analystRows.filter((row) => row.state === "mapped").length;
-  const documentedCount = analystRows.filter((row) => row.state === "documented").length;
-  const gapCount = analystRows.filter((row) => row.state === "queued" || row.state === "missing").length;
-
-  if (selectedCityIntel.kind === "selection-prompt") {
-    return (
-      <div className="border border-[#272c29] bg-[#0f1112] px-3 py-3">
-        <p className="text-sm font-semibold text-white">{selectedCityIntel.title}</p>
-        <p className="mt-2 text-[12px] leading-5 text-slate-400">{selectedCityIntel.body}</p>
-        {selectedCityIntel.sourceLabels.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-1">
-            {selectedCityIntel.sourceLabels.map((sourceLabel) => (
-              <span key={`prompt-${sourceLabel}`} className="tactical-chip px-1.5 py-0.5 text-[9px]">
-                {sourceLabel}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3 border border-[#272c29] bg-[#0f1112] px-3 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[15px] font-semibold leading-none text-white">{selectedCityIntel.cityName}</p>
-          <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-slate-500">
-            {selectedCityIntel.cityMeta}
-          </p>
-        </div>
-        <Link href={selectedCityIntel.clearHref} className="tactical-chip px-2 py-1 text-[10px]">
-          Clear
-        </Link>
-      </div>
-
-      <div className="flex flex-wrap gap-1.5">
-        <span className="tactical-chip tactical-chip-active px-2 py-1 text-[10px]">
-          {mappedCount} mapped
-        </span>
-        <span className="tactical-chip px-2 py-1 text-[10px]">{documentedCount} documented</span>
-        <span className="tactical-chip px-2 py-1 text-[10px]">{gapCount} gaps</span>
-        {selectedCityIntel.coverageBadges.map((badge) => (
-          <span
-            key={`coverage-${badge}`}
-            className="tactical-chip tactical-chip-active px-2 py-1 text-[10px]"
-          >
-            {badge}
-          </span>
-        ))}
-      </div>
-
-      {selectedCityIntel.summary ? (
-        <p className="text-[12px] leading-5 text-slate-300">{selectedCityIntel.summary}</p>
-      ) : null}
-
-      <div className="flex items-center gap-2">
-        <Link
-          href={selectedCityIntel.workspaceHref}
-          className="tactical-chip tactical-chip-active flex-1 justify-center px-3 py-2 text-[11px]"
-        >
-          Open full city dossier
-        </Link>
-        <span className="tactical-chip px-2 py-1 text-[9px]">
-          {selectedCityIntel.sourceLabels.length} sources
-        </span>
-      </div>
-
-      <CityBriefSection rows={selectedCityIntel.metricRows} title="Snapshot" />
-      <CityBriefSection rows={selectedCityIntel.infrastructureRows} title="Infrastructure" />
-
-      {selectedCityIntel.entityRows.length > 0 ? (
-        <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Entity cues</p>
-          <div className="space-y-1.5">
-            {selectedCityIntel.entityRows.map((entity) => (
-              <div
-                key={`${entity.entityTypeLabel}-${entity.entityName}`}
-                className="border border-[#272c29] bg-[#121515] px-2.5 py-2"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-[12px] font-semibold text-white">{entity.entityName}</p>
-                    <p className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-500">
-                      {entity.entityTypeLabel} / {entity.presenceLabel}
-                    </p>
-                  </div>
-                  <span className="tactical-chip px-1.5 py-0.5 text-[9px]">
-                    {entity.exactSite ? "exact" : "city"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {selectedCityIntel.sourceLabels.length > 0 ? (
-        <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Visible source labels</p>
-          <div className="flex flex-wrap gap-1">
-            {selectedCityIntel.sourceLabels.map((sourceLabel) => (
-              <span
-                key={`selected-city-${sourceLabel}`}
-                className="tactical-chip tactical-chip-active px-1.5 py-0.5 text-[9px]"
-              >
-                {sourceLabel}
-              </span>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function renderWatchlist(watchlist: TacticalSidebarWatchlist) {
-  const visibleSourceLabels = watchlist.sourceLabels.slice(0, 3);
-  const content = (
-    <div className="border border-[#272c29] bg-[#0f1112] px-2.5 py-2">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-semibold text-white">{watchlist.label}</p>
-          <p className="mt-0.5 text-[11px] leading-4 text-slate-400">{watchlist.description}</p>
-        </div>
-        <span className="tactical-chip px-2 py-1 text-[9px]">{watchlist.cityCount} cities</span>
-      </div>
-      {watchlist.cityLabels.length > 0 ? (
-        <p className="mt-2 text-[10px] uppercase tracking-[0.16em] text-slate-500">
-          {watchlist.cityLabels.join(" / ")}
-        </p>
-      ) : null}
-      {visibleSourceLabels.length > 0 ? (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {visibleSourceLabels.map((sourceLabel) => (
-            <span
-              key={`${watchlist.id}-${sourceLabel}`}
-              className="tactical-chip tactical-chip-active px-1.5 py-0.5 text-[9px]"
-            >
-              {sourceLabel}
-            </span>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-
-  if (!watchlist.href) {
-    return <div key={watchlist.id}>{content}</div>;
-  }
-
-  return (
-    <Link key={watchlist.id} href={watchlist.href} className="block">
-      {content}
-    </Link>
-  );
-}
-
-function renderCityListSection({
-  emptyMessage,
-  results,
-  title,
-}: {
-  emptyMessage: string;
-  results: TacticalSidebarSearchResult[];
-  title: string;
-}) {
-  return (
-    <section className="space-y-2 border-b border-[#232825] pb-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[#a7b47f]">{title}</p>
-        <span className="text-[10px] uppercase tracking-[0.18em] text-slate-600">{results.length}</span>
-      </div>
-      {results.length > 0 ? (
-        <div className="space-y-1.5">{results.map(renderSearchResult)}</div>
-      ) : (
-        <div className="border border-[#272c29] bg-[#0f1112] px-3 py-3">
-          <p className="text-[12px] leading-5 text-slate-400">{emptyMessage}</p>
-        </div>
-      )}
-    </section>
-  );
+  return {
+    kind: "selected-city",
+    slug: intel.slug,
+    cityName: intel.cityName,
+    cityMeta: intel.cityMeta,
+    clearHref: intel.clearHref,
+    coverageBadges: intel.coverageBadges,
+    entityRows: intel.entityRows,
+    infrastructureRows: intel.infrastructureRows,
+    metricRows: intel.metricRows,
+    sourceLabels: intel.sourceLabels,
+    summary: intel.summary,
+    workspaceHref: intel.workspaceHref,
+  };
 }
 
 export function TacticalSidebar({
+  activeLayerIdsValue,
   activeBaseImageryLayerId,
   activeDate,
-  activeLayerIdsValue,
-  analystSections,
+  analystSections = [],
+  sections = [],
+  baseImageryOptions = [],
+  imageryDateOptions = [],
+  savedViewOptions = [],
   datasetWorkspaceSummary,
   featuredCities,
   recentCities,
@@ -480,7 +183,109 @@ export function TacticalSidebar({
   selectedViewLabel,
   watchlists,
 }: TacticalSidebarProps) {
-  const visibleSections = analystSections;
+  const isSidebarCollapsed = useTacticalGlobeStore((state) => state.isSidebarCollapsed);
+  const setSidebarCollapsed = useTacticalGlobeStore((state) => state.setSidebarCollapsed);
+  const setLegendOpen = useTacticalGlobeStore((state) => state.setLegendOpen);
+  const setSettingsOpen = useTacticalGlobeStore((state) => state.setSettingsOpen);
+  const setShortcutsOpen = useTacticalGlobeStore((state) => state.setShortcutsOpen);
+
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState(searchQuery);
+
+  // ⌘K / Ctrl-K opens the palette; "/" focuses the inline search field.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping =
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen(true);
+      } else if (event.key === "/" && !isTyping) {
+        event.preventDefault();
+        const input = document.getElementById("tactical-rail-search") as HTMLInputElement | null;
+        input?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const analystRows = useMemo(
+    () => analystSections.flatMap((section) => section.rows),
+    [analystSections],
+  );
+  const mappedCount = analystRows.filter((row) => row.state === "mapped").length;
+  const documentedCount = analystRows.filter((row) => row.state === "documented").length;
+  const gapCount = analystRows.filter((row) => row.state === "queued" || row.state === "missing").length;
+
+  const coveragePending = featuredCities.length === 0 && analystRows.length === 0;
+
+  const paletteCities = useMemo<CommandPaletteCity[]>(() => {
+    const source = searchResults.length > 0 ? searchResults : featuredCities;
+    return source.slice(0, 12).map((city) => ({ href: city.href, name: city.name, meta: city.meta }));
+  }, [searchResults, featuredCities]);
+
+  const recentRows = useMemo<SavedRecentCityRow[]>(
+    () =>
+      recentCities.map((city) => ({
+        href: city.href,
+        meta: city.meta,
+        name: city.name,
+        populationLabel: city.populationLabel,
+        selected: city.selected,
+        slug: city.slug,
+      })),
+    [recentCities],
+  );
+
+  const compareSets = useMemo<SavedRecentCompareSet[]>(
+    () =>
+      watchlists.map((watchlist) => ({
+        id: watchlist.id,
+        label: watchlist.label,
+        description: watchlist.description,
+        cityCount: watchlist.cityCount,
+        cityLabels: watchlist.cityLabels,
+        href: watchlist.href,
+      })),
+    [watchlists],
+  );
+
+  const nameForSlug = useCallback(
+    (slug: string) => recentCities.find((city) => city.slug === slug)?.name ?? slug,
+    [recentCities],
+  );
+
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+
+  if (isSidebarCollapsed) {
+    return (
+      <aside
+        data-testid="tactical-command-rail"
+        data-density="operator-console"
+        data-geometry="hard-edge"
+        data-layout="mission-console"
+        data-collapsed="true"
+        className="flex h-full w-14 flex-col items-center gap-3 border border-[#31362f] bg-[#101313]/97 px-2 py-3"
+      >
+        <span className="signal-dot" />
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed(false)}
+          aria-label="Expand command rail"
+          className="tactical-chip px-2 py-2 text-[10px]"
+        >
+          <Compass aria-hidden className="size-4" />
+        </button>
+        <button type="button" onClick={openPalette} aria-label="Open command palette" className="tactical-chip px-2 py-2">
+          <Search aria-hidden className="size-4" />
+        </button>
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} cities={paletteCities} />
+      </aside>
+    );
+  }
 
   return (
     <aside
@@ -490,128 +295,107 @@ export function TacticalSidebar({
       data-layout="mission-console"
       className="flex h-full flex-col gap-3 border border-[#31362f] bg-[#101313]/97 px-3 py-3 font-sans"
     >
-      <div className="border-b border-[#232825] pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="signal-dot" />
-              <p className="eyebrow">Analyst rail · live</p>
-            </div>
-            <h1 className="display-title mt-1.5 text-[19px] font-bold leading-none">City-first OSINT atlas</h1>
-            <p className="mt-1.5 text-[11px] uppercase tracking-[0.22em] text-slate-500">{selectedViewLabel}</p>
-          </div>
-          <div className="grid gap-1.5">
-            <span className="tactical-chip justify-center px-2 py-1 text-[10px]">
-              {visibleSections.length} sections
-            </span>
-          </div>
-        </div>
+      <SidebarHeader viewLabel={selectedViewLabel} onCollapse={() => setSidebarCollapsed(true)} />
+
+      {/* Search-first: input doubles as the command-palette entry point. */}
+      <div className="space-y-1.5">
+        <form action="/" className="relative">
+          <input type="hidden" name="view" value={selectedViewId} />
+          <input type="hidden" name="layers" value={activeLayerIdsValue} />
+          <input type="hidden" name="base" value={activeBaseImageryLayerId} />
+          {activeDate ? <input type="hidden" name="date" value={activeDate} /> : null}
+          <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+          <input
+            id="tactical-rail-search"
+            name="q"
+            type="search"
+            value={searchValue}
+            onChange={(event) => setSearchValue(event.target.value)}
+            placeholder="Search cities, coordinates, aliases"
+            aria-label="Search cities, coordinates, aliases"
+            className="tactical-input py-2.5 pl-9 pr-12 text-sm focus:ring-2 focus:ring-cyan-300/40"
+          />
+          <button
+            type="button"
+            onClick={openPalette}
+            aria-label="Open command palette"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-[#3a4037] bg-[#121515] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.16em] text-slate-500"
+          >
+            ⌘K
+          </button>
+        </form>
       </div>
 
       <div className="tactical-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-        <section className="space-y-2 border-b border-[#232825] pb-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[#a7b47f]">City jump</p>
-            <span className="text-[10px] uppercase tracking-[0.18em] text-slate-600">{selectedViewLabel}</span>
-          </div>
+        <SidebarSection id="workspaces" title="Workspaces" icon={Compass}>
+          <WorkspaceNav />
+        </SidebarSection>
 
-          <form action="/" className="space-y-2">
-            <input type="hidden" name="view" value={selectedViewId} />
-            <input type="hidden" name="layers" value={activeLayerIdsValue} />
-            <input type="hidden" name="base" value={activeBaseImageryLayerId} />
-            {activeDate ? <input type="hidden" name="date" value={activeDate} /> : null}
-            <label className="block">
-              <span className="mb-1.5 block text-[10px] uppercase tracking-[0.24em] text-slate-500">Search</span>
-              <input
-                name="q"
-                type="search"
-                defaultValue={searchQuery}
-                placeholder="Search cities, coordinates, aliases"
-                className="tactical-input px-3 py-2.5 text-sm"
-              />
-            </label>
-            <button type="submit" className="tactical-chip tactical-chip-active px-3 py-2 text-[11px]">
-              Open city brief
-            </button>
-          </form>
+        <SidebarSection id="browse" title="Browse" icon={Building2}>
+          <BrowseNav onBrowse={openPalette} />
+        </SidebarSection>
 
-          {renderSelectedCityIntel({
-            analystSections,
-            selectedCityIntel,
-          })}
+        <SidebarSection
+          id="map-layers"
+          title="Map layers"
+          icon={Layers}
+          state={sections.some((family) => family.rows.length > 0) ? "loaded" : "pending"}
+        >
+          <MapLayersGroup
+            families={sections}
+            baseImageryOptions={baseImageryOptions}
+            imageryDateOptions={imageryDateOptions}
+            savedViewOptions={savedViewOptions}
+            onOpenLegend={() => setLegendOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+        </SidebarSection>
 
-          {searchResults.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Search results</p>
-              <div className="space-y-1.5">{searchResults.slice(0, 8).map(renderSearchResult)}</div>
-            </div>
-          ) : searchResultsLoading ? (
-            <div className="border border-[#272c29] bg-[#0f1112] px-3 py-3">
-              <p className="text-[12px] leading-5 text-slate-400">
-                Searching the source-backed city index for matching briefs.
-              </p>
-            </div>
-          ) : featuredCities.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Jump set</p>
-              <div className="space-y-1.5">{featuredCities.slice(0, 6).map(renderSearchResult)}</div>
+        <SidebarSection
+          id="city-brief"
+          title="City brief"
+          icon={Building2}
+          state={
+            selectedCityIntel.kind === "selected-city"
+              ? "loaded"
+              : coveragePending
+                ? "pending"
+                : "empty"
+          }
+        >
+          <CityBriefPanel
+            intel={toBriefIntel(selectedCityIntel)}
+            mappedCount={mappedCount}
+            documentedCount={documentedCount}
+            gapCount={gapCount}
+            coveragePending={coveragePending}
+            onBrowseCities={openPalette}
+          />
+          {searchResultsLoading ? (
+            <div className="space-y-1.5" aria-hidden>
+              {[0, 1, 2].map((index) => (
+                <div key={index} className="h-10 animate-pulse rounded-lg border border-[#272c29] bg-[#0f1112]" />
+              ))}
             </div>
           ) : null}
-        </section>
+        </SidebarSection>
 
-        {visibleSections.map((section) => (
-          <section key={section.id} className="space-y-2 border-b border-[#232825] pb-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.26em] text-slate-400">{section.title}</p>
-                <p className="mt-1 text-[11px] leading-4 text-slate-500">{section.description}</p>
-              </div>
-              <span className="tactical-chip px-2 py-1 text-[9px]">{section.rows.length}</span>
-            </div>
-
-            {section.rows.length > 0 ? (
-              <div className="space-y-1.5">{section.rows.map(renderAnalystRow)}</div>
-            ) : (
-              <div className="border border-[#272c29] bg-[#0f1112] px-3 py-3">
-                <p className="text-[12px] leading-5 text-slate-400">
-                  No source-backed rows are published for this section yet.
-                </p>
-              </div>
-            )}
-          </section>
-        ))}
-
-        <section className="space-y-2 border-b border-[#232825] pb-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[#a7b47f]">
-              Saved watchlists / compare sets
-            </p>
-            <span className="text-[10px] uppercase tracking-[0.18em] text-slate-600">{watchlists.length}</span>
-          </div>
-          {watchlists.length > 0 ? (
-            <div className="space-y-1.5">{watchlists.map(renderWatchlist)}</div>
-          ) : (
-            <div className="border border-[#272c29] bg-[#0f1112] px-3 py-3">
-              <p className="text-[12px] leading-5 text-slate-400">
-                No saved compare sets are published for this build yet.
-              </p>
-            </div>
-          )}
-        </section>
-
-        {renderCityListSection({
-          emptyMessage: "No recently viewed cities have been recorded in this browser yet.",
-          results: recentCities,
-          title: "Recently viewed cities",
-        })}
+        <SidebarSection
+          id="saved-recent"
+          title="Saved & recent"
+          icon={Bookmark}
+          state={watchlists.length > 0 || recentCities.length > 0 ? "loaded" : "empty"}
+        >
+          <SavedRecentGroup nameForSlug={nameForSlug} compareSets={compareSets} recentCities={recentRows} />
+        </SidebarSection>
       </div>
 
-      <div className="border-t border-[#232825] pt-3">
-        <Link href={datasetWorkspaceSummary.href} className="block border border-[#272c29] bg-[#0f1112] px-2.5 py-2">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">{datasetWorkspaceSummary.label}</p>
-          <p className="mt-1 text-[11px] text-slate-300">{datasetWorkspaceSummary.meta}</p>
-        </Link>
-      </div>
+      <SidebarFooter
+        datasetWorkspaceSummary={datasetWorkspaceSummary}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
+      />
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} cities={paletteCities} />
     </aside>
   );
 }

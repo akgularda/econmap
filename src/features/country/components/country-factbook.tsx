@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 
-import { MetricBarChart } from "@/components/charts/metric-bar-chart";
-import { MetricLineChart } from "@/components/charts/metric-line-chart";
 import { MetricCard } from "@/components/data/metric-card";
 import { PageFrame } from "@/components/layout/page-frame";
 import { EmptyState } from "@/components/states/empty-state";
@@ -18,6 +17,21 @@ import {
 } from "@/lib/factbook";
 import { CountryAssets } from "./country-assets";
 import { CountryCities } from "./country-cities";
+
+// Code-split recharts off the country route's initial chunk: the charts live behind tab state
+// (Overview/Trade/Demographics) and recharts is ~150 KB. ssr:false is required under static export.
+const ChartSkeleton = () => (
+  <div className="h-[280px] w-full animate-pulse rounded-[2rem] border border-white/10 bg-white/[0.03]" />
+);
+
+const MetricBarChart = dynamic(
+  () => import("@/components/charts/metric-bar-chart").then((m) => m.MetricBarChart),
+  { ssr: false, loading: ChartSkeleton },
+);
+const MetricLineChart = dynamic(
+  () => import("@/components/charts/metric-line-chart").then((m) => m.MetricLineChart),
+  { ssr: false, loading: ChartSkeleton },
+);
 
 const tabs = [
   "Overview",

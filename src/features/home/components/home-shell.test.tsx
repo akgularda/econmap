@@ -594,29 +594,22 @@ describe("HomeShell", () => {
     expect(screen.getByTestId("tactical-2d-surface")).toBeInTheDocument();
     expect(screen.getByTestId("infos-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("cesium-globe-surface")).not.toBeInTheDocument();
-    expect(screen.getByText(/^city-first osint atlas$/i)).toBeInTheDocument();
+    // v2 command rail: brand wordmark replaces the old <h1> hero.
+    expect(screen.queryByText(/^city-first osint atlas$/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/^global ops$/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/^focus cities$/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^3d earth$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/^orbital surface$/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/published layers only\. no runtime globe apis\./i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/awaiting published layer/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^layer stack$/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^local dataset inventory$/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^manifest refresh$/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/^city jump$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^dossier sections$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^infrastructure categories$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^institutions \/ public services$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^telecom \/ connectivity$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^utilities \/ energy$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^logistics \/ transport$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^environment \/ hazards$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^source coverage \/ data quality$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^missing coverage \/ gaps$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^saved watchlists \/ compare sets$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^recently viewed cities$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^visible source labels$/i)).toBeInTheDocument();
+    // v2 IA: the rail now exposes product navigation + a coherent map-layers group.
+    expect(screen.getByText(/^workspaces$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^browse$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^map layers$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^city brief$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^saved & recent$/i)).toBeInTheDocument();
+    // Every product destination is reachable from the home rail (was unreachable in v1).
+    expect(screen.getByRole("link", { name: /^compare$/i })).toHaveAttribute("href", "/compare");
+    expect(screen.getByRole("link", { name: /^rankings$/i })).toHaveAttribute("href", "/rankings");
+    expect(screen.getByRole("link", { name: /^dashboard$/i })).toHaveAttribute("href", "/dashboard");
     expect(screen.getByText(/^infos$/i)).toBeInTheDocument();
     expect(screen.getAllByText(/^gdp$/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/^not covered$/i)).not.toBeInTheDocument();
@@ -625,20 +618,14 @@ describe("HomeShell", () => {
     expect(screen.getAllByText(/^airports$/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/^ports$/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/^utilities$/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/^telecom \/ connectivity$/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/^environment$/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/^organizations$/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/^visible source labels$/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/^economic factbook$/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/^dataset explorer$/i)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^datasets$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^compare$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /^dashboard$/i })).not.toBeInTheDocument();
     expect(screen.queryByTestId("tactical-control-cluster")).not.toBeInTheDocument();
     expect(screen.queryByText(/^timeline$/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/toggle timeline/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/reset camera/i)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /^open full city dossier$/i })).toBeInTheDocument();
+    // Real ON/OFF layer toggles for published layers.
     expect(screen.getAllByText(/^on$/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/^off$/i).length).toBeGreaterThan(0);
   });
@@ -1359,9 +1346,9 @@ describe("HomeShell", () => {
       />,
     );
 
-    expect(await screen.findByText(/^saved watchlists \/ compare sets$/i)).toBeInTheDocument();
+    expect(await screen.findByText(/^saved & recent$/i)).toBeInTheDocument();
     expect(screen.getByText(/^osint compare set$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^recently viewed cities$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^recently viewed$/i)).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /^ankara/i }).length).toBeGreaterThan(0);
   });
 });
