@@ -97,6 +97,11 @@ def build_eurostat_city_code_map(registry):
     city_lookup = build_city_lookup(registry, "countryIso3")
     city_codes = defaultdict(set)
 
+    # The OECD FUA municipality list is the City-ID <-> registry-city crosswalk Eurostat matching
+    # depends on. It is a portal-only (manual) source; without it there is no Eurostat city mapping.
+    if not OECD_MUNICIPALITIES_FILE.exists():
+        return {}
+
     with OECD_MUNICIPALITIES_FILE.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
@@ -133,6 +138,10 @@ def parse_eurostat_cell(value: str) -> float | None:
 
 def read_eurostat_series(valid_city_codes: set[str]):
     series: dict[str, dict[str, dict[int, float]]] = defaultdict(dict)
+
+    # Eurostat is a bulk/portal source; degrade to no city-labour coverage when absent.
+    if not EUROSTAT_LABOUR_FILE.exists():
+        return series
 
     with gzip.open(EUROSTAT_LABOUR_FILE, "rt", encoding="utf-8") as handle:
         header = next(handle).rstrip("\n").split("\t")
@@ -289,6 +298,10 @@ def parse_gleif_company_counts(registry):
     major_city_lookup = build_city_lookup(registry, "countryIso2", major_only=True)
     counts = defaultdict(int)
     content_date = None
+
+    # GLEIF concatenated file is huge and optional here; degrade to no company-presence when absent.
+    if not GLEIF_LEI_ZIP_FILE.exists():
+        return counts, content_date
 
     with zipfile.ZipFile(GLEIF_LEI_ZIP_FILE) as archive:
         xml_name = next(name for name in archive.namelist() if name.lower().endswith(".xml"))

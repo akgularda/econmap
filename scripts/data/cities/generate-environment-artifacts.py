@@ -299,6 +299,11 @@ def load_latest_who_rows(who_file: Path, name_lookup: dict[tuple[str, str], list
 
 
 def load_aqueduct_rows(aqueduct_file: Path):
+    # Aqueduct is a portal-only (manual) source; degrade gracefully to no water-stress
+    # coverage when it is absent, matching load_carbon_monitor_rows' existence guard.
+    if not aqueduct_file.exists():
+        return {}
+
     baseline_name = "Aqueduct40_waterrisk_download_Y2023M07D05/CVS/Aqueduct40_baseline_annual_y2023m07d05.csv"
     with ZipFile(aqueduct_file) as archive:
         with archive.open(baseline_name) as handle:
