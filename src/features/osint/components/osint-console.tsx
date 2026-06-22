@@ -22,6 +22,7 @@ import {
 } from "@/lib/city-data-client";
 import { COVERAGE_STYLE, entityIcon, entityLabel, fmtPop } from "@/features/osint/lib/entity-display";
 import { EntityMiniMap } from "@/features/osint/components/entity-mini-map";
+import { briefFilename, cityBriefToJson, cityBriefToMarkdown, downloadText } from "@/features/osint/lib/investigation";
 
 type Entity = NonNullable<Awaited<ReturnType<typeof loadCityEntities>>>["entities"][number];
 type Sources = NonNullable<Awaited<ReturnType<typeof loadCityEntities>>>["sources"];
@@ -170,6 +171,16 @@ export function OsintConsole() {
     });
   }
 
+  function exportBrief(format: "md" | "json") {
+    if (!selected) return;
+    const brief = { city: selected, dossier: { entities: entities ?? [], sources, coverage } };
+    if (format === "md") {
+      downloadText(`${briefFilename(selected)}.md`, cityBriefToMarkdown(brief), "text/markdown");
+    } else {
+      downloadText(`${briefFilename(selected)}.json`, cityBriefToJson(brief), "application/json");
+    }
+  }
+
   return (
     <div className="flex h-screen flex-col bg-slate-950 text-slate-100">
       <nav className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-slate-950/80 px-4 backdrop-blur">
@@ -276,6 +287,21 @@ export function OsintConsole() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {hasDossier && entities ? (
+                    <details className="relative">
+                      <summary className="inline-flex cursor-pointer list-none items-center rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-white/10">
+                        Export
+                      </summary>
+                      <div className="absolute right-0 z-10 mt-1 flex w-40 flex-col overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-2xl">
+                        <button type="button" onClick={() => exportBrief("md")} className="px-3 py-2 text-left text-xs text-slate-200 hover:bg-white/5">
+                          Markdown (.md)
+                        </button>
+                        <button type="button" onClick={() => exportBrief("json")} className="px-3 py-2 text-left text-xs text-slate-200 hover:bg-white/5">
+                          JSON (.json)
+                        </button>
+                      </div>
+                    </details>
+                  ) : null}
                   <Link
                     href={`/osint/compare?cities=${selected.cityId}`}
                     className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-white/10"
