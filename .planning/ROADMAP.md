@@ -180,3 +180,12 @@ Aqueduct = portal-only, generators need Python+geopandas+the OECD FUA shapefile)
   fixed a `usePathname` test-mock regression in tactical-sidebar/home-shell (11 tests). typecheck/lint clean.
 - **Known pre-existing failures (not v1.2 regressions, fail on main):** `asset-provenance` (no generated
   `public/data/assets` dir), `bulk-source-manifest` (required GLEIF/GHSL/OECD/WPI absent — the `required`-flag question).
+- **Batch 2 (2026-06-22) — DONE:** multi-city compare (`/osint/compare`, Suspense, build-verified) + entity mini-map
+  (lazy maplibre, no-CSS) + `use-city-dossier` hook. Commits `c72e536`.
+- **Rank 9 (2026-06-22) — DONE:** export a city brief (Markdown/JSON, client-side). **Theme 1 (OSINT) complete:**
+  filter · compare · mini-map · export. Commit `028e9a6`.
+- **Rank 2 (2026-06-23) — VERIFIED NO-OP:** the dev-home registry bloat is already fixed — home render is
+  registry-free (`featured-cities.json` + bundle dossier reads). No change needed.
+- **Status: 8/18 deliverables done (Theme 1 complete; Theme 2 partial).** Remaining autonomous: rank 7
+  (publish slim `enrichment.json`) → ranks 8/10/11 (country/rankings/compare data tables), rank 12 (a11y polish).
+  **Theme 3 (coverage, 13–18) portal/Python-BLOCKED** — needs user data downloads (WPI/Aqueduct) or stays a gap.
