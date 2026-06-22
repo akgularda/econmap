@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { PageFrame } from "@/components/layout/page-frame";
 import { loadLegacyOsintSurfaceModel } from "@/lib/command-center-data";
+import { ConnectivityRanking } from "@/features/rankings/components/connectivity-ranking";
 
 export async function RankingsPage() {
   const model = await loadLegacyOsintSurfaceModel();
@@ -51,6 +52,7 @@ export async function RankingsPage() {
           </tbody>
         </table>
       </div>
+      <ConnectivityRanking />
     </PageFrame>
   );
 }

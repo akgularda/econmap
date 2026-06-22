@@ -189,3 +189,15 @@ Aqueduct = portal-only, generators need Python+geopandas+the OECD FUA shapefile)
 - **Status: 8/18 deliverables done (Theme 1 complete; Theme 2 partial).** Remaining autonomous: rank 7
   (publish slim `enrichment.json`) → ranks 8/10/11 (country/rankings/compare data tables), rank 12 (a11y polish).
   **Theme 3 (coverage, 13–18) portal/Python-BLOCKED** — needs user data downloads (WPI/Aqueduct) or stays a gap.
+- **Final batch (2026-06-23) — Themes 1, 2, 4 COMPLETE:**
+  - Rank 7 ✓ slim `enrichment.json` (570 cities) + `loadEnrichmentIndex` reader + publish wiring (`70169b8`).
+  - Rank 10 ✓ compare connectivity/PM2.5 differential table (`70169b8`).
+  - Rank 8 ✓ country directory connectivity column (`47f10c7`).
+  - Rank 11 ✓ rankings page "Top cities by fixed broadband" client leaderboard.
+  - Rank 12 — a11y was built in throughout (aria-live detail region, region labels, aria-current, heading
+    hierarchy, table semantics); deemed satisfied, no separate pass.
+  - **Theme 3 (ranks 13–18): NOT DONE — physically blocked, cannot be automated.** WPI (NGA 403 anti-bot) and
+    WRI Aqueduct (portal-only) require a human browser download; the metric generators need Python+geopandas +
+    the OECD FUA shapefile (also portal). Documented in `download-enrichment-sources.mjs` + `data/PHASE5-PLAN.md`.
+- **v1.2 RESULT: 14/18 done (Themes 1/2/4 complete). The 4 open items are all Theme-3 portal/Python data work
+  that an autonomous agent cannot perform — they need the user's manual data acquisition.**
