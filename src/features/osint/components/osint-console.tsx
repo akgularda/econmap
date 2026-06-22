@@ -11,21 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  Building2,
-  Crosshair,
-  ExternalLink,
-  Factory,
-  GraduationCap,
-  MapPin,
-  Plane,
-  Search,
-  Ship,
-  TrainFront,
-  Truck,
-  Zap,
-  type LucideIcon,
-} from "lucide-react";
+import { Crosshair, ExternalLink, MapPin, Search } from "lucide-react";
 
 import {
   loadCityCoverageShell,
@@ -34,47 +20,13 @@ import {
   type CityCoverageShell,
   type CitySearchIndexEntry,
 } from "@/lib/city-data-client";
+import { COVERAGE_STYLE, entityIcon, entityLabel, fmtPop } from "@/features/osint/lib/entity-display";
 
 type Entity = NonNullable<Awaited<ReturnType<typeof loadCityEntities>>>["entities"][number];
 type Sources = NonNullable<Awaited<ReturnType<typeof loadCityEntities>>>["sources"];
 
 /** Search entry with its lowercased haystack precomputed once (not per keystroke). */
 type Prepared = { e: CitySearchIndexEntry; name: string; hay: string };
-
-const ENTITY_ICON: Record<string, LucideIcon> = {
-  airport: Plane,
-  port: Ship,
-  rail_hub: TrainFront,
-  logistics_hub: Truck,
-  utility: Zap,
-  research: GraduationCap,
-  company: Building2,
-  factory: Factory,
-  industrial_park: Factory,
-};
-
-const ENTITY_LABEL: Record<string, string> = {
-  airport: "Airports",
-  port: "Ports",
-  rail_hub: "Rail hubs",
-  logistics_hub: "Logistics hubs",
-  utility: "Power & utilities",
-  research: "Research & universities",
-  company: "Companies",
-  factory: "Factories",
-  industrial_park: "Industrial parks",
-};
-
-const COVERAGE_STYLE: Record<string, { dot: string; text: string; label: string }> = {
-  mapped: { dot: "bg-emerald-400", text: "text-emerald-200", label: "Covered" },
-  documented: { dot: "bg-amber-400", text: "text-amber-200", label: "Partial" },
-  missing: { dot: "bg-slate-500", text: "text-slate-400", label: "Not covered yet" },
-};
-
-function fmtPop(pop: number | null | undefined): string {
-  if (pop == null) return "pop. unknown";
-  return `${pop.toLocaleString("en-US")} pop.`;
-}
 
 function rank(p: Prepared, q: string): number {
   if (p.name === q) return 0;
@@ -93,6 +45,7 @@ export function OsintConsole() {
   const [coverage, setCoverage] = useState<CityCoverageShell | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [hasDossier, setHasDossier] = useState<boolean | null>(null);
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
   // Monotonic token: only the latest selection is allowed to write detail state, so an
   // out-of-order dossier resolution can't render one city's data under another's header.
@@ -164,6 +117,7 @@ export function OsintConsole() {
     setCoverage(null);
     setSources([]);
     setHasDossier(null);
+    setTypeFilter(new Set()); // clear stale entity-type filters when switching cities
 
     Promise.all([loadCityEntities(entry.cityId), loadCityCoverageShell(entry.cityId)])
       .then(([ent, cov]) => {
@@ -193,6 +147,27 @@ export function OsintConsole() {
     }
     return [...map.entries()].sort((a, b) => b[1].length - a[1].length);
   }, [entities]);
+
+  // Filter the grouped entities by the active type chips (empty filter = show all). Operates on
+  // already-loaded in-memory entities, so it's instant and needs no fetch.
+  const filteredGrouped = useMemo(
+    () => (typeFilter.size === 0 ? grouped : grouped.filter(([type]) => typeFilter.has(type))),
+    [grouped, typeFilter],
+  );
+  const shownTotal = useMemo(
+    () => filteredGrouped.reduce((sum, [, items]) => sum + items.length, 0),
+    [filteredGrouped],
+  );
+
+  function toggleType(type: string | null) {
+    setTypeFilter((prev) => {
+      if (type === null) return new Set();
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  }
 
   return (
     <div className="flex h-screen flex-col bg-slate-950 text-slate-100">
@@ -316,7 +291,10 @@ export function OsintConsole() {
               ) : (
                 <>
                   {coverage ? <CoveragePanel coverage={coverage} /> : null}
-                  <EntitiesPanel grouped={grouped} total={entities?.length ?? 0} />
+                  {grouped.length > 1 ? (
+                    <EntityTypeFilter grouped={grouped} active={typeFilter} onToggle={toggleType} />
+                  ) : null}
+                  <EntitiesPanel grouped={filteredGrouped} total={shownTotal} />
                   {sources.length > 0 ? <SourcesPanel sources={sources} /> : null}
                 </>
               )}
@@ -337,6 +315,35 @@ function EmptyState() {
         and connectivity, with explicit coverage states and provenance.
       </p>
       <p className="mt-2 text-xs text-slate-600">Press <kbd className="rounded border border-white/15 px-1">/</kbd> to search.</p>
+    </div>
+  );
+}
+
+function EntityTypeFilter({
+  grouped,
+  active,
+  onToggle,
+}: {
+  grouped: [string, Entity[]][];
+  active: Set<string>;
+  onToggle: (type: string | null) => void;
+}) {
+  const chip = (on: boolean) =>
+    `rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+      on
+        ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-50"
+        : "border-white/10 bg-white/5 text-slate-400 hover:text-slate-200"
+    }`;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter entities by type">
+      <button type="button" onClick={() => onToggle(null)} aria-pressed={active.size === 0} className={chip(active.size === 0)}>
+        All
+      </button>
+      {grouped.map(([type, items]) => (
+        <button key={type} type="button" onClick={() => onToggle(type)} aria-pressed={active.has(type)} className={chip(active.has(type))}>
+          {entityLabel(type)} <span className="text-slate-500">({items.length})</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -386,12 +393,12 @@ function EntitiesPanel({ grouped, total }: { grouped: [string, Entity[]][]; tota
       </div>
       <div className="mt-4 space-y-5">
         {grouped.map(([type, items]) => {
-          const Icon = ENTITY_ICON[type] ?? Building2;
+          const Icon = entityIcon(type);
           return (
             <div key={type}>
               <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
                 <Icon aria-hidden className="size-4 text-slate-500" />
-                {ENTITY_LABEL[type] ?? type} <span className="text-slate-600">({items.length})</span>
+                {entityLabel(type)} <span className="text-slate-600">({items.length})</span>
               </div>
               <ul className="mt-2 space-y-1.5">
                 {items.slice(0, 8).map((e) => {

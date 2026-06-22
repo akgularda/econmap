@@ -5,6 +5,7 @@ import { HomeShell } from "@/features/home/components/home-shell";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => "/",
 }));
 
 const citySelectionAssetPath = "/data/globe/reference/city-footprints/selectable.geojson";

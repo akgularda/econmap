@@ -154,3 +154,29 @@ Aqueduct, Carbon Monitor, GLEIF) — staged/documented in `.planning/data/PHASE5
 |-------|--------|-----------|
 | 4. Globe PMTiles packing | ✓ Complete | 2026-06-21 |
 | 5. Full city enrichment coverage | ✓ Executed — 9,235 cities / 119,020 entities / 5 sources / 9 globe layers; audit 5/5 (manual sources excepted) | 2026-06-21 |
+
+---
+
+## Milestone v1.2 — OSINT depth · perf/robustness · country/compare · coverage (started 2026-06-22)
+
+Site deployed (v1.0/v1.1, live at akgularda.github.io/econmap). v1.2 deepens the product. Planned via a
+4-architect workflow → 18 sequenced deliverables. **Themes 1/2/4 are fully autonomous; theme 3 (coverage)
+is mostly portal/Python-gated** — only its download/doc halves are autonomous (WPI = NGA 403 anti-bot,
+Aqueduct = portal-only, generators need Python+geopandas+the OECD FUA shapefile).
+
+### Theme 1 — Deepen the OSINT tool
+- entity type-filter chips · multi-city compare (/osint/compare) · entity mini-map · save/export investigation
+### Theme 2 — Performance & robustness
+- kill dev-home 132MB registry bloat (resolve featured from slug-meta) · fix failing tests · OSINT test net · a11y
+### Theme 3 — Expand data coverage (mostly blocked)
+- AUTO downloads: OECD SDMX, Carbon Monitor, GHSL · MANUAL: WPI, Aqueduct · generate steps gated on Python
+### Theme 4 — Country & compare features
+- publish slim enrichment.json · country factbook cities tab · rankings by new data · compare enrichment table
+
+### Progress
+- **Batch 1 (2026-06-22) — DONE:** fixed the long-standing `command-center-manifest-consistency` test honestly
+  (present sources reconcile; absent stay "not registered"); extracted shared `src/features/osint/lib/entity-display.ts`
+  (gates compare/mini-map/country work) + added the entity type-filter; added OSINT test suites (9 tests);
+  fixed a `usePathname` test-mock regression in tactical-sidebar/home-shell (11 tests). typecheck/lint clean.
+- **Known pre-existing failures (not v1.2 regressions, fail on main):** `asset-provenance` (no generated
+  `public/data/assets` dir), `bulk-source-manifest` (required GLEIF/GHSL/OECD/WPI absent — the `required`-flag question).

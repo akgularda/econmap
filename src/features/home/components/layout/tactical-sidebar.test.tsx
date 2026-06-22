@@ -9,6 +9,7 @@ import type { MapLayerFamily } from "@/features/home/lib/analyst-sidebar-model";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => "/",
 }));
 
 const EMPTY_FAMILIES: MapLayerFamily[] = [

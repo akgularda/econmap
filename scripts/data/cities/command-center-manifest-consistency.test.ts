@@ -74,9 +74,18 @@ describe("command-center manifest counts trace to the city manifest", () => {
     for (const [datasetId, label] of Object.entries(datasetToLabel)) {
       const dataset = CC.datasetInventory.find((d) => d.id === datasetId);
       expect(dataset, `missing datasetInventory entry: ${datasetId}`).toBeDefined();
-      expect(CITY.sourceCounts).toHaveProperty(label);
-      const expected = `${CITY.sourceCounts[label].toLocaleString("en-US")} city bundles`;
-      expect(dataset!.detail).toContain(expected);
+      if (Object.prototype.hasOwnProperty.call(CITY.sourceCounts, label)) {
+        // Source IS present in this build → its detail must carry the exact comma-formatted count.
+        const expected = `${CITY.sourceCounts[label].toLocaleString("en-US")} city bundles`;
+        expect(dataset!.detail).toContain(expected);
+      } else {
+        // Source is ABSENT in this build (e.g. World Port Index when the WPI pack wasn't acquired).
+        // Keep the gap VISIBLE, don't hide it: the generator must not fabricate a bundle count and
+        // must say the local pack is "not registered" — assert exactly that, so a future regen that
+        // silently fakes a count (or drops the honesty note) fails here.
+        expect(dataset!.detail).not.toMatch(/[\d,]+ city bundles/);
+        expect(dataset!.detail.toLowerCase()).toContain("not registered");
+      }
     }
   });
 
